@@ -13,7 +13,7 @@ namespace ChatServerMVC.services.Services
             _db = db;
         }
         public Task<byte[]> GetKey(Guid UserId, Guid RoomId)
-        {
+    {
             EncryptionKeyModel key = _db.EncryptionKeys.First(e => e.UserId == UserId && e.RoomId == RoomId);
             return Task.FromResult(key.Key);
         }

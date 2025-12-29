@@ -83,7 +83,7 @@ namespace ChatServerMVC.services.Services
         }
 
         public Task<List<Guid>> GetRooms(Guid User)
-        {
+    {
             var Rooms = _db.RoomMembers
             .Where(r => r.UserId == User).Select(r => r.RoomId).ToList();
             return Task.FromResult(new List<Guid>());

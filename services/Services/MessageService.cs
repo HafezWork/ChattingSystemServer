@@ -57,7 +57,7 @@ namespace ChatServerMVC.services.Services
             var queryLast = query.Where(m => m.CreatedAt > lastMessage);
 
             return queryLast.Select(m => new
-            {
+    {
                 m.MessageId,
                 m.From,
                 ciphertext = Convert.ToBase64String(m.CipherText),
