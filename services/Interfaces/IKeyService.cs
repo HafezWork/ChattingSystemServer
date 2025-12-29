@@ -3,6 +3,6 @@
     public interface IKeyService
     {
         Task<byte[]> GetKey(Guid UserId, Guid RoomId);
-        void RotateKey(Guid UserId, List<byte[]> Key);
+// void RotateKey(Guid UserId, List<byte[]> Key);
     }
 }

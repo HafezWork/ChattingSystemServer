@@ -58,40 +58,23 @@ namespace ChatServerMVC.services
                 return;
             }
 
-            switch (envelope.Type)
-            {
-                case "auth":
-                    sockets.TryAdd(envelope.From, ctx.Socket);
-                    break;
-
-                case "ping":
-                    ctx.LastSeen = DateTime.UtcNow;
-                    ctx.Socket.Send("{\"type\":\"pong\"}");
-                    break;
-
-                //case "message.send":
-                //    RequireAuth(ctx, () => _chat.SendMessage(ctx, envelope.Payload));
-                //    break;
-                case "send":
-                    var RecepientSocket =  sockets[envelope.To];
+            
+                    var RecepientSocket =  sockets[envelope.RoomId];
                     var SenderSocket = sockets[envelope.From];
                     WsClient WsRecepient = new WsClient(RecepientSocket);
                     WsRecepient.user = new UserModel(){ Id=envelope.From,UserName="Recepient"};
                     WsClient WsSender = new WsClient(SenderSocket);
-                    WsSender.user = new UserModel() { Id = envelope.To, UserName = "Sender" };
+                    WsSender.user = new UserModel() { Id = envelope.RoomId, UserName = "Sender" };
 
                     MessageController.SendMessage(WsSender, WsRecepient, envelope.CipherText);
-                    break;
+
 
                 //case "typing.start":
                 //case "typing.stop":
                 //    RequireAuth(ctx, () => _presence.Typing(ctx, envelope.Type, envelope.Payload));
                 //    break;
 
-                default:
-                    ctx.Socket.Send("{\"type\":\"error\",\"message\":\"unknown_type\"}");
-                    break;
-            }
+              
         }
     }
 }

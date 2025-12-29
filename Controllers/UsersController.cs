@@ -5,8 +5,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ChatServerMVC.Controllers
 {
-    [Route("api/Users")]
     [ApiController]
+    [Route("api/Users")]
     public class UsersController : ControllerBase
     {
         // GET: api/<Users>
