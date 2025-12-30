@@ -5,14 +5,31 @@ using ChatServerMVC.services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using ChatServerMVC.services.Interfaces;
+using ChatServerMVC.services.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllersWithViews();
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+builder.Services.AddDbContextFactory<DataContext>(options =>
+{
+    options.UseMySql(builder.Configuration.GetConnectionString("DefaultConnection"), ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("DefaultConnection")));
+});
+builder.Services.AddControllers();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IRoomService, RoomService>();
+builder.Services.AddScoped<IMessageService, MessageService>();
+builder.Services.AddScoped<IKeyService, KeyService>();
+builder.Services.AddSingleton<IConnectionRegistry, ConnectionRegistry>();
+builder.Services.AddScoped<WebSocketHandler>();
 
-var context = new DataContext(connectionString);
-context.Database.EnsureCreated();
+
+//var context = new DataContext(connectionString);
+//context.Database.EnsureCreated();
+//builder.Services.AddSingleton<IConnectionRegistry, ConnectionRegistry>();
+//builder.Services.AddScoped<ChatHub>();
+builder.Services.AddSwaggerGen();
+
+
 var jwtSettings = builder.Configuration.GetSection("Jwt");
 var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]!);
 builder.Services.AddAuthentication(options =>
@@ -33,52 +50,64 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(key)
     };
 });
-var app = builder.Build();
 
-// Start Fleck WebSocket server on a different port than Kestrel
-var wsServer = new WebSocketServer("ws://0.0.0.0:8181");
-wsServer.RestartAfterListenError = true;
-
-wsServer.Start(socket =>
+builder.Services.AddCors(options =>
 {
-    WsClient ctx = null;
-
-    socket.OnOpen = () =>
+    options.AddPolicy("AllowFrontend", policy =>
     {
-        ctx = new WsClient(socket);
-        WebSocketHandler.AddClient(socket, ctx);
-    };
-
-    socket.OnClose = () =>
-    {
-        if (ctx != null)
-        {
-            //WsClient client;
-            //WebSocketHandler.RemoveClient(socket.ConnectionInfo.Id, client);
-            Console.WriteLine("Socket closed!");
-        }
-    };
-
-    socket.OnMessage = message =>
-    {
-        if (ctx != null)
-            WebSocketHandler.Route(ctx, message);
-    };
+        policy
+            .AllowAnyOrigin()
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
 });
 
-// Configure the HTTP request pipeline
+
+var app = builder.Build();
+
+app.UseCors("AllowFrontend");
+
+using (var scope = app.Services.CreateScope())
+{
+    var wsHandler = scope.ServiceProvider.GetRequiredService<WebSocketHandler>();
+    wsHandler.Start();
+    var db = scope.ServiceProvider.GetRequiredService<DataContext>();
+    try
+    {
+        if (!db.Database.CanConnect())
+        {
+            Console.WriteLine("Database connection failed. Exiting.");
+            return; // stop the app
+        }
+        Console.WriteLine("Database connection successful.");
+
+
+        Console.WriteLine($"Database exists: {db.Database.GetAppliedMigrations().Any()}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Database connection check failed: {ex.Message}");
+        throw; // stop the app
+    }
+}
+
+
+
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseHsts();
 }
 
 app.UseHttpsRedirection();
-app.UseStaticFiles();
 app.UseRouting();
+app.UseSwagger();
+app.UseSwaggerUI();
 app.UseAuthorization();
+app.UseWebSockets();
 
-app.MapControllerRoute(
-    name: "default",
-    pattern: "{controller=Home}/{action=Index}/{id?}");
 
+app.MapControllers();
+//app.UseSwagger();
+//app.UseSwaggerUI();
 app.Run();

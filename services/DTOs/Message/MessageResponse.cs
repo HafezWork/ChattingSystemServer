@@ -2,8 +2,8 @@
 {
     public class MessageResponse
     {
-        public string MessageId { get; set; }
-        public string SenderId { get; set; }
+        public Guid MessageId { get; set; }
+        public Guid SenderId { get; set; }
         public string EncText { get; set; }
         public string Nonce { get; set; }
         public DateTime Timestamp { get; set; }

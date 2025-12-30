@@ -2,7 +2,7 @@
 {
     public class GetKeyRequest
     {
-        public string RoomId { get; set; }
-        public string PersonalUid { get; set; }
+        public Guid RoomId { get; set; }
+        public Guid PersonalUid { get; set; }
     }
 }

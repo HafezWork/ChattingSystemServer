@@ -1,4 +1,5 @@
 ﻿using System.Security.Policy;
+using ChatServerMVC.Domain.Entities;
 using ChatServerMVC.Models;
 using ChatServerMVC.services.Interfaces;
 using Microsoft.EntityFrameworkCore;
@@ -7,15 +8,16 @@ namespace ChatServerMVC.services.Services
 {
     public class RoomService : IRoomService
     {
-        private readonly DataContext _db;
+        private readonly IDbContextFactory<DataContext> _dbFactory;
 
 
-        public RoomService(DataContext db)
+        public RoomService(IDbContextFactory<DataContext> dbFactory)
         {
-            _db = db;
+            _dbFactory = dbFactory;
         }
-        public Task<Guid> CreateRoom(string name, Guid creator, List<Guid> users, List<(Guid, byte[])> encryptionKeys)
+        public async Task<Guid> CreateRoom(string name, Guid creator, List<Guid> users, List<(Guid, byte[])> encryptionKeys)
         {
+            await using var _db = await _dbFactory.CreateDbContextAsync();
             var room = new RoomModel
             {
                 Id = Guid.NewGuid(),
@@ -42,18 +44,19 @@ namespace ChatServerMVC.services.Services
             }
             ));
             _db.SaveChanges();
-            return Task.FromResult(room.Id);
+            return room.Id;
         }
 
-        public Task<Guid> CreateDM(Guid firstUser, Guid secondUser, List<(Guid, byte[])> encryptionKeys)
+        public async Task<Guid> CreateDM(Guid firstUser, Guid secondUser, List<(Guid, byte[])> encryptionKeys)
         {
-            var existing = _db.Rooms
+            await using var _db = await _dbFactory.CreateDbContextAsync();
+            var existing = await _db.Rooms
             .Include(r => r.Users)
             .FirstOrDefaultAsync(r =>
                 r.Users.Any(m => m.UserId == firstUser) &&
                 r.Users.Any(m => m.UserId == secondUser));
 
-            if (existing != null) return Task.FromResult(existing.Result.Id);
+            if (existing != null) return existing.Id;
             var firstMember = new RoomMemberModel { UserId = firstUser };
             var secondMember = new RoomMemberModel() { UserId = secondUser };
 
@@ -64,6 +67,7 @@ namespace ChatServerMVC.services.Services
             users[1].RoomId = id;
             _db.Rooms.Add(new RoomModel
             {
+                Name = "blabla",
                 Id = id,
                 CreatedAt = DateTime.Now,
                 CreatedBy = firstUser,
@@ -79,15 +83,23 @@ namespace ChatServerMVC.services.Services
             }
             ));
             _db.SaveChanges();
-            return Task.FromResult(id);
+            return id;
         }
 
-        public Task<List<Guid>> GetRooms(Guid User)
+        public async Task<List<Guid>> GetRooms(Guid User)
     {
-            var Rooms = _db.RoomMembers
-            .Where(r => r.UserId == User).Select(r => r.RoomId).ToList();
-            return Task.FromResult(new List<Guid>());
+            await using var _db = await _dbFactory.CreateDbContextAsync();
+            var Rooms = await _db.RoomMembers
+            .Where(r => r.UserId == User).Select(r => r.RoomId).ToListAsync();
+            return Rooms;
 
+        }
+        public async Task<List<Guid>> GetRoomMembers(Guid RoomId)
+        {
+            await using var _db = await _dbFactory.CreateDbContextAsync();
+            var Members = await _db.RoomMembers
+            .Where(r => r.RoomId == RoomId).Select(r => r.UserId).ToListAsync();
+            return Members;
         }
     }
 }

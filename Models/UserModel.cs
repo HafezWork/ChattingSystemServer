@@ -1,5 +1,8 @@
-﻿namespace ChatServerMVC.Models
+﻿using System.ComponentModel.DataAnnotations.Schema;
+
+namespace ChatServerMVC.Models
 {
+    [Table("Users")]
     public class UserModel
     {
         public required Guid Id  { get; set; }

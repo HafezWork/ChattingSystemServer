@@ -10,11 +10,11 @@ namespace ChatServerMVC.Controllers
     public class UsersController : ControllerBase
     {
         // GET: api/<Users>
-        [HttpGet]
-        public IEnumerable<WsClient> Get()
-        {
-            return WebSocketHandler.GetClients();
-        }
+        //[HttpGet]
+        //public IEnumerable<WsClient> Get()
+        //{
+        //    return new WsClient;
+        //}
 
         // GET api/<Users>/5
         [HttpGet("{id}")]

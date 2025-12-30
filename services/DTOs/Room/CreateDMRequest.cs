@@ -2,8 +2,7 @@
 {
     public class CreateDMRequest
     {
-        public Guid FirstUser { get; set; }
         public Guid SecondUser { get; set; }
-        public List<byte[]> Keys { get; set; }
+        public List<(Guid, byte[])> Keys { get; set; }
     }
 }

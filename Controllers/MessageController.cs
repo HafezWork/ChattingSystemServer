@@ -1,16 +1,27 @@
-﻿using ChatServerMVC.services.DTOs.Message;
+﻿using System.Security.Claims;
+using ChatServerMVC.services.DTOs.Message;
+using ChatServerMVC.services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
+[Authorize]
 [Route("api/messages")]
 public class MessageController : ControllerBase
 {
-    [HttpGet]
-    public IActionResult GetMessages(
-        [FromQuery] string userid,
-        [FromQuery] string room_id,
-        [FromQuery] string last_message_id = null)
+    private readonly IMessageService _message;
+
+    public MessageController(IMessageService message)
     {
+        _message = message;
+    }
+    [HttpGet("{room_id}")]
+    public async Task<IActionResult> GetMessages(
+        Guid room_id,
+        [FromQuery] Guid? last_message_id)
+    {
+        var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        var response = await _message.GetMessages(userId, room_id, last_message_id);
         return Ok(new[]
         {
             new MessageResponse

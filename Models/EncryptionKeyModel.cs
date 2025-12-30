@@ -1,5 +1,8 @@
-﻿namespace ChatServerMVC.Models
+﻿using System.ComponentModel.DataAnnotations.Schema;
+
+namespace ChatServerMVC.Models
 {
+    [Table("EncryptionKeys")]
     public class EncryptionKeyModel
     {
         public Guid RoomId { get; set; }
@@ -8,6 +11,6 @@
         public UserModel User { get; set; } = null!;
         public byte[] Key { get; set; } = null!;
         public int KeyVersion { get; set; }
-        public DateTime CreatedAt { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }

@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics.Metrics;
 using ChatServerMVC.Models;
+using ChatServerMVC.services.DTOs.Message;
 using ChatServerMVC.services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,15 +8,17 @@ namespace ChatServerMVC.services.Services
 {
     public class MessageService : IMessageService
     {
-        private readonly DataContext _db;
+        private readonly IDbContextFactory<DataContext> _dbFactory;
 
 
-        public MessageService(DataContext db)
+        public MessageService(IDbContextFactory<DataContext> dbFactory)
         {
-            _db = db;
+            _dbFactory = dbFactory;
         }
-        public Task SaveMessage(Guid user, Guid roomId, byte[] cipherText, byte[] nonce, int keyVersion)
+        public async Task SaveMessage(Guid user, Guid roomId, byte[] cipherText, byte[] nonce, int keyVersion)
         {
+
+            await using var _db = await _dbFactory.CreateDbContextAsync();
             _db.Messages.Add(new MessageModel
             {
                 MessageId = Guid.NewGuid(),
@@ -26,45 +29,46 @@ namespace ChatServerMVC.services.Services
                 From = user
             });
             _db.SaveChanges();
-            return Task.CompletedTask;
+            return;
         }
 
-        public Task<List<object>> GetMessages(Guid user, Guid roomId, Guid? lastMessageId)
+        public async Task<List<MessageResponse>> GetMessages(Guid user, Guid roomId, Guid? lastMessageId)
         {
-            if (!_db.Messages.Any(m => m.From == user && m.RoomId == roomId))
+            await using var _db = await _dbFactory.CreateDbContextAsync();
+            if (!_db.RoomMembers.Any(m => m.UserId == user && m.RoomId == roomId))
             {
-                throw new Exception("user is not enrolled in room!");
+                return new List<MessageResponse>();
             }
             var query = _db.Messages.Where(m => m.RoomId == roomId).OrderBy(m => m.CreatedAt);
             if (query.Count() == 0)
             {
-                return Task.FromResult(new List<object>());
+                return new List<MessageResponse>();
             }
             if (lastMessageId == null)
             {
-                return query.Select(m => new
-                {
-                    m.MessageId,
-                    m.From,
-                    ciphertext = Convert.ToBase64String(m.CipherText),
-                    nonce = Convert.ToBase64String(m.Nonce),
-                    m.KeyVersion,
-                    m.CreatedAt
-                }).Cast<object>().ToListAsync();
+                return await query.Select(m => new MessageResponse
+                {   
+                    MessageId = m.MessageId,
+                    SenderId = m.From,
+                    EncText = Convert.ToBase64String(m.CipherText),
+                    Nonce = Convert.ToBase64String(m.Nonce),
+                    //m.KeyVersion,
+                    Timestamp = m.CreatedAt
+                }).ToListAsync();
             }
             var last = _db.Messages.FindAsync(lastMessageId.Value);
             var lastMessage = last.Result.CreatedAt;
             var queryLast = query.Where(m => m.CreatedAt > lastMessage);
 
-            return queryLast.Select(m => new
-    {
-                m.MessageId,
-                m.From,
-                ciphertext = Convert.ToBase64String(m.CipherText),
-                nonce = Convert.ToBase64String(m.Nonce),
-                m.KeyVersion,
-                m.CreatedAt
-            }).Cast<object>().ToListAsync();
+            return await queryLast.Select(m => new MessageResponse
+            {
+                MessageId = m.MessageId,
+                SenderId = m.From,
+                EncText = Convert.ToBase64String(m.CipherText),
+                Nonce = Convert.ToBase64String(m.Nonce),
+                //m.KeyVersion,
+                Timestamp = m.CreatedAt
+            }).ToListAsync();
         }
 
 

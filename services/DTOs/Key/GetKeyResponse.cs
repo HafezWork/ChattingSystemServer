@@ -2,6 +2,6 @@
 {
     public class GetKeyResponse
     {
-        public string PersonalShared { get; set; }
+        public byte[] PersonalShared { get; set; }
     }
 }

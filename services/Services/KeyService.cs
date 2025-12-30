@@ -1,21 +1,22 @@
 ﻿using ChatServerMVC.Models;
 using ChatServerMVC.services.Interfaces;
+using Microsoft.EntityFrameworkCore;
 
 namespace ChatServerMVC.services.Services
 {
     public class KeyService : IKeyService
     {
-        private readonly DataContext _db;
+        private readonly IDbContextFactory<DataContext> _dbFactory;
 
-
-        public KeyService(DataContext db)
+        public KeyService(IDbContextFactory<DataContext> dbFactory)
         {
-            _db = db;
+            _dbFactory = dbFactory;
         }
-        public Task<byte[]> GetKey(Guid UserId, Guid RoomId)
+        public async Task<byte[]> GetKey(Guid UserId, Guid RoomId)
     {
+            await using var _db = await _dbFactory.CreateDbContextAsync();
             EncryptionKeyModel key = _db.EncryptionKeys.First(e => e.UserId == UserId && e.RoomId == RoomId);
-            return Task.FromResult(key.Key);
+            return key.Key;
         }
     }
 }

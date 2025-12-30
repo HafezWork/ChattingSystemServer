@@ -1,4 +1,5 @@
 ﻿using ChatServerMVC.services.DTOs.Auth;
+using ChatServerMVC.services.Interfaces;
 using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,54 +11,30 @@ namespace ChatServerMVC.Controllers
     [ApiController]
     public class AuthController : ControllerBase
     {
-        [HttpPost("register")]
-        public IActionResult Register(services.DTOs.Auth.RegisterRequest request)
+        private readonly IAuthService _auth;
+
+        public AuthController(IAuthService auth)
         {
+            _auth = auth;
+        }
+        [HttpPost("register")]
+        public async Task<IActionResult> Register(services.DTOs.Auth.RegisterRequest request)
+        {
+             var response = await _auth.Register(request.Username, request.Password, request.PublicKey);
             return Ok(new AuthResponse
             {
-                
-                //UserUid = Guid.NewGuid().ToString()
+                UserUid = response
             });
         }
         [HttpPost("Login")]
-        public IActionResult Login(services.DTOs.Auth.LoginRequest request)
+        public async Task<IActionResult> Login(services.DTOs.Auth.LoginRequest request)
         {
+            var response = await _auth.Login(request.Username, request.Password);
             return Ok(new AuthResponse
             {
-
-                //UserUid = Guid.NewGuid().ToString()
+                UserUid = response.Item1,
+                JWT = response.Item2
             });
-        }
-        // GET: api/<ValuesController1>
-        [HttpGet]
-        public IEnumerable<string> Get()
-        {
-            return new string[] { "value1", "value2" };
-        }
-
-        // GET api/<ValuesController1>/5
-        [HttpGet("{id}")]
-        public string Get(int id)
-        {
-            return "value";
-        }
-
-        // POST api/<ValuesController1>
-        [HttpPost]
-        public void Post([FromBody] string value)
-        {
-        }
-
-        // PUT api/<ValuesController1>/5
-        [HttpPut("{id}")]
-        public void Put(int id, [FromBody] string value)
-        {
-        }
-
-        // DELETE api/<ValuesController1>/5
-        [HttpDelete("{id}")]
-        public void Delete(int id)
-        {
         }
     }
 }

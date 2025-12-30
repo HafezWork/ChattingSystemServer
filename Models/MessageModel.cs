@@ -1,5 +1,8 @@
-﻿namespace ChatServerMVC.Models
+﻿using System.ComponentModel.DataAnnotations.Schema;
+
+namespace ChatServerMVC.Models
 {
+    [Table("Messages")]
     public class MessageModel
     {
         public Guid MessageId { get; set; }
@@ -12,7 +15,7 @@
         public byte[] CipherText { get; set; }
         public byte[] Nonce { get; set; }
         public int KeyVersion { get; set; }
-        public DateTime CreatedAt { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     }
 }

@@ -3,78 +3,168 @@ using Fleck;
 using Microsoft.AspNetCore.Connections;
 using System.Collections.Concurrent;
 using System.Net;
-using Newtonsoft.Json;
+using System.Text.Json;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 using ChatServerMVC.Controllers;
+using ChatServerMVC.services.Interfaces;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
+using System.IO;
+using System.Web;
+using SuperSocket.ClientEngine;
 
 namespace ChatServerMVC.services
 {
 
-    public class WsClient(IWebSocketConnection socket)
+    public class WsClient
     {
-        public IWebSocketConnection Socket { get; set; } = socket;
-        public ChatServerMVC.Models.UserModel user { get; set; }
-        public DateTime LastSeen { get; set; } = DateTime.UtcNow;
+        public IWebSocketConnection Socket { get; }
+        public Guid UserId { get; }
+
+        public WsClient(IWebSocketConnection socket, Guid userId)
+        {
+            Socket = socket;
+            UserId = userId;
+        }
+
+
+
+        public Task SendAsync(object payload)
+        {
+            var json = JsonSerializer.Serialize(payload);
+            return Socket.Send(json);
+        }
     }
+
+    public class WsEnvelope
+    {
+        public string Type { get; set; } = null!;
+        public Guid RoomId { get; set; }
+        public string? Ciphertext { get; set; }
+        public string? Nonce { get; set; }
+        public int? KeyVersion { get; set; }
+        public Guid? AfterMessageId { get; set; }
+    }
+
 
     public class WebSocketHandler
     {
-        private static ConcurrentDictionary<IWebSocketConnection, WsClient> clients = new();
-        private static ConcurrentDictionary<Guid, IWebSocketConnection> sockets = new();
-        public static WsClient GetClient(IWebSocketConnection socket)
+        private readonly IMessageService _messages;
+        private readonly IRoomService _rooms;
+        private readonly IConnectionRegistry _connections;
+        private readonly IAuthService _auth;
+
+        public WebSocketHandler(
+       IMessageService messages,
+       IRoomService rooms,
+       IConnectionRegistry connections,
+       IAuthService auth)
         {
-            return clients[socket];
-        }
-        public static WsClient[] GetClients()
-        {
-            return clients.Values.ToArray();
-        }
-        public static void AddClient(IWebSocketConnection socket, WsClient client)
-        {
-            clients.TryAdd(socket, client);
+            _messages = messages;
+            _rooms = rooms;
+            _connections = connections;
+            _auth = auth;
         }
 
-        public static void RemoveClient(IWebSocketConnection socket, WsClient client)
+        public void Start()
         {
-            clients.TryRemove(socket, out client);
-        }
-
-        async public static void Route(WsClient ctx, string rawMessage)
-        {
-            MessageModel envelope;
-
-            try
+            var wsServer = new WebSocketServer("ws://0.0.0.0:8181")
             {
-                envelope = JsonConvert.DeserializeObject<MessageModel>(rawMessage);
-                
-            }
-            catch
+                RestartAfterListenError = true
+            };
+
+            wsServer.Start(socket =>
             {
-                await ctx.Socket.Send(JsonConvert.SerializeObject(new
+                WsClient? ctx = null;
+
+                socket.OnOpen = () =>
                 {
-                    type = "error",
-                    message = "invalid_json"
-                }));
-                return;
+
+                    var uri = socket.ConnectionInfo;
+                    var query = HttpUtility.ParseQueryString(uri.Path);
+                    var client = query.GetValue("/?access_token");
+                    if (client == null)
+                    {
+                        socket.Close();
+                        return;
+                    }
+                    var token = client;
+                    try
+                    {
+                        var userId = _auth.ValidateToken(token);
+                        ctx = new WsClient(socket, userId.Result);
+                        _connections.Add(userId.Result, ctx);
+                    }
+                    catch
+                    {
+                        socket.Close();
+                    }
+                };
+
+                socket.OnClose = () =>
+                {
+                    if (ctx != null)
+                        _connections.Remove(ctx.UserId);
+                };
+
+                socket.OnMessage = async message =>
+                {
+                    if (ctx == null) return;
+                    await Route(ctx, message);
+                };
+            });
+        }
+        private async Task Route(WsClient ctx, string message)
+        {
+            var envelope = JsonSerializer.Deserialize<WsEnvelope>(message);
+            if (envelope == null) return;
+
+            switch (envelope.Type)
+            {
+                case "send":
+                    await HandleSendMessage(ctx, envelope);
+                    break;
+
+                case "fetch":
+                    await HandleFetchMessages(ctx, envelope);
+                    break;
             }
+        }
 
-            
-                    var RecepientSocket =  sockets[envelope.RoomId];
-                    var SenderSocket = sockets[envelope.From];
-                    WsClient WsRecepient = new WsClient(RecepientSocket);
-                    WsRecepient.user = new UserModel(){ Id=envelope.From,UserName="Recepient"};
-                    WsClient WsSender = new WsClient(SenderSocket);
-                    WsSender.user = new UserModel() { Id = envelope.RoomId, UserName = "Sender" };
+        private async Task HandleSendMessage(WsClient sender, WsEnvelope msg)
+        {
+            await _messages.SaveMessage(
+                sender.UserId,
+                msg.RoomId,
+                Convert.FromBase64String(msg.Ciphertext!),
+                Convert.FromBase64String(msg.Nonce!),
+                msg.KeyVersion!.Value
+            );
 
-                    MessageController.SendMessage(WsSender, WsRecepient, envelope.CipherText);
+            var members = await _rooms.GetRoomMembers(msg.RoomId);
+            foreach (var userId in members)
+            {
+                if (_connections.TryGet(userId, out var client))
+                {
+                    await client.SendAsync(msg);
+                }
+            }
+        }
 
+        private async Task HandleFetchMessages(WsClient client, WsEnvelope msg)
+        {
+            var messages = await _messages.GetMessages(client.UserId, msg.RoomId, msg.AfterMessageId);
 
-                //case "typing.start":
-                //case "typing.stop":
-                //    RequireAuth(ctx, () => _presence.Typing(ctx, envelope.Type, envelope.Payload));
-                //    break;
-
-              
+            foreach (var m in messages)
+            {
+                await client.SendAsync(new WsEnvelope
+                {
+                    Type = "send_message",
+                    RoomId = msg.RoomId,
+                    Ciphertext = m.EncText,
+                    Nonce = m.Nonce,
+                    KeyVersion = 1
+                });
+            }
         }
     }
 }

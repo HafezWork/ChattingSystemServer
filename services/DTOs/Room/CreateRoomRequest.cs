@@ -5,6 +5,6 @@
         public string Name { get; set; }
         public Guid Creator { get; set; }
         public List<Guid> Users { get; set; }
-        public List<byte[]> EncryptionKeys { get; set; }
+        public List<(Guid, byte[])> EncryptionKeys { get; set; }
     }
 }

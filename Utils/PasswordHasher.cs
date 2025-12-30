@@ -19,7 +19,9 @@ namespace ChatServerMVC.Utils
 
 
             var pbkdf2 = new Rfc2898DeriveBytes(password, salt, 100000, HashAlgorithmName.SHA256);
-            return pbkdf2.GetBytes(32).Equals(givenHash);
+            var hashVal = pbkdf2.GetBytes(20);
+            var valid = hashVal.SequenceEqual(givenHash);
+            return valid;
             
         }
     }
