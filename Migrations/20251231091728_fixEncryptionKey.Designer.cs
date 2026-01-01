@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ChatServerMVC.Migrations
 {
     [DbContext(typeof(DataContext))]
-    [Migration("20251229162716_nullExceptionHandling")]
-    partial class nullExceptionHandling
+    [Migration("20251231091728_fixEncryptionKey")]
+    partial class fixEncryptionKey
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -40,6 +40,9 @@ namespace ChatServerMVC.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime")
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("char(36)");
 
                     b.Property<byte[]>("Key")
                         .IsRequired()
@@ -106,9 +109,10 @@ namespace ChatServerMVC.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RoomId");
-
                     b.HasIndex("UserId");
+
+                    b.HasIndex("RoomId", "UserId")
+                        .IsUnique();
 
                     b.ToTable("RoomMembers");
                 });
@@ -184,7 +188,7 @@ namespace ChatServerMVC.Migrations
                         .IsRequired();
 
                     b.HasOne("ChatServerMVC.Models.UserModel", "User")
-                        .WithMany()
+                        .WithMany("EncryptionKeys")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -243,6 +247,8 @@ namespace ChatServerMVC.Migrations
 
             modelBuilder.Entity("ChatServerMVC.Models.UserModel", b =>
                 {
+                    b.Navigation("EncryptionKeys");
+
                     b.Navigation("RoomMembers");
                 });
 #pragma warning restore 612, 618

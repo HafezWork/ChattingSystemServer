@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ChatServerMVC.Migrations
 {
     [DbContext(typeof(DataContext))]
-    [Migration("20251229154256_InitialCreate")]
+    [Migration("20251230100850_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -106,9 +106,10 @@ namespace ChatServerMVC.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RoomId");
-
                     b.HasIndex("UserId");
+
+                    b.HasIndex("RoomId", "UserId")
+                        .IsUnique();
 
                     b.ToTable("RoomMembers");
                 });

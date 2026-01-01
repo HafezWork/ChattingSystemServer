@@ -152,9 +152,10 @@ namespace ChatServerMVC.Migrations
                 columns: new[] { "RoomId", "CreatedAt" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_RoomMembers_RoomId",
+                name: "IX_RoomMembers_RoomId_UserId",
                 table: "RoomMembers",
-                column: "RoomId");
+                columns: new[] { "RoomId", "UserId" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_RoomMembers_UserId",

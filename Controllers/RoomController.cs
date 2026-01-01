@@ -1,9 +1,11 @@
 ﻿using System.Security.Claims;
 using ChatServerMVC.services.DTOs.Room;
 using ChatServerMVC.services.Interfaces;
+using ChatServerMVC.services.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace ChatServerMVC.Controllers
 {
@@ -24,18 +26,18 @@ namespace ChatServerMVC.Controllers
         public async Task<IActionResult> CreateRoom(CreateRoomRequest request)
         {
             var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-            var roomId =  await _rooms.CreateRoom(
+            var roomId = await _rooms.CreateRoom(
                 request.Name,
                 userId,
                 request.Users,
                 request.EncryptionKeys.Select(k =>
-                (k.Item1, k.Item2)
+                (k.UserId, k.Key)
                 ).ToList()
 );
             return Ok(new CreateRoomResponse
             {
                 RoomID = roomId
-            }); 
+            });
         }
 
         [HttpPost("directMessage")]
@@ -46,7 +48,7 @@ namespace ChatServerMVC.Controllers
                 userId,
                 request.SecondUser,
                 request.Keys.Select(k =>
-                (k.Item1, k.Item2)
+                (k.UserId, k.Key)
                 ).ToList()
 );
             return Ok(new CreateDMResponse
@@ -62,5 +64,40 @@ namespace ChatServerMVC.Controllers
             var rooms = await _rooms.GetRooms(userId);
             return Ok(rooms);
         }
+
+        //    [HttpGet("{roomId}")]
+        //    [Authorize]
+        //    public async Task<IActionResult> GetRoomById(Guid roomId)
+        //    {
+        //        var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+
+        //        var room = await _rooms.GetRoomById(roomId, userId);
+
+        //        if (room == null)
+        //        {
+        //            return NotFound(new { message = "Room not found" });
+        //        }
+
+        //        // Map to DTO
+        //        var roomDto = new RoomDto
+        //        {
+        //            Id = room.Id,
+        //            Name = room.Name,
+        //            CreatedBy = room.CreatedBy,
+        //            CreatedAt = room.CreatedAt,
+        //            Users = room.Users.Select(u => u.UserId).ToList(),
+        //            Messages = room.Messages.OrderByDescending(m => m.CreatedAt).Take(10).Select(m => new MessageDto
+        //            {
+        //                Content = m.Content,
+        //                EncText = m.EncText,
+        //                Nonce = m.Nonce,
+        //                CreatedAt = m.CreatedAt,
+        //                SenderId = m.SenderId
+        //            }).ToList()
+        //        };
+
+        //        return Ok(roomDto);
+        //    }
+        //}
     }
 }

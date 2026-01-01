@@ -63,11 +63,16 @@ namespace ChatServerMVC.Models
                 .HasForeignKey(rm => rm.RoomId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            modelBuilder.Entity<RoomMemberModel>()
+            .HasIndex(rm => new { rm.RoomId, rm.UserId })
+            .IsUnique();
+
             modelBuilder.Entity<EncryptionKeyModel>(entity => 
             {
+
                 entity.HasKey(e => new { e.RoomId, e.UserId, e.KeyVersion });
-                entity.HasOne(e => e.Room).WithMany(e => e.Keys).HasForeignKey(e => e.RoomId);
-                entity.HasOne(e => e.User).WithMany().HasForeignKey(e => e.UserId);
+                entity.HasOne(e => e.Room).WithMany(e => e.Keys).HasForeignKey(e => e.RoomId).OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(e => e.User).WithMany(u => u.EncryptionKeys).HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.Cascade);
                 entity.Property(e => e.Key).IsRequired();
                 entity.Property(e => e.CreatedAt).HasColumnType("datetime").HasDefaultValueSql("CURRENT_TIMESTAMP");
             });

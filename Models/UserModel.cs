@@ -14,6 +14,7 @@ namespace ChatServerMVC.Models
         public DateTime LastSeen { get; set; } = DateTime.UtcNow;
         public byte[] PublicKey { get; set; }
         public ICollection<RoomMemberModel> RoomMembers { get; set; } = new List<RoomMemberModel>();
-
+        public ICollection<EncryptionKeyModel> EncryptionKeys { get; set; }
+    = new List<EncryptionKeyModel>();
     }
 }

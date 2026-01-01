@@ -22,13 +22,7 @@ public class MessageController : ControllerBase
     {
         var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
         var response = await _message.GetMessages(userId, room_id, last_message_id);
-        return Ok(new[]
-        {
-            new MessageResponse
-            {
-                
-            }
-        });
+        return Ok(response);
     }
 }
 

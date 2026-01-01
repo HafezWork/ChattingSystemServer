@@ -1,8 +1,11 @@
-﻿namespace ChatServerMVC.services.DTOs.Room
+﻿using ChatServerMVC.Models;
+
+namespace ChatServerMVC.services.DTOs.Room
 {
     public class CreateDMRequest
     {
-        public Guid SecondUser { get; set; }
-        public List<(Guid, byte[])> Keys { get; set; }
+        public string SecondUser { get; set; }
+        public List<KeyEntry> Keys { get; set; }
     }
 }
+

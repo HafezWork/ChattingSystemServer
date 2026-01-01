@@ -15,18 +15,15 @@ builder.Services.AddDbContextFactory<DataContext>(options =>
     options.UseMySql(builder.Configuration.GetConnectionString("DefaultConnection"), ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("DefaultConnection")));
 });
 builder.Services.AddControllers();
+
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IRoomService, RoomService>();
+builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IMessageService, MessageService>();
 builder.Services.AddScoped<IKeyService, KeyService>();
 builder.Services.AddSingleton<IConnectionRegistry, ConnectionRegistry>();
 builder.Services.AddScoped<WebSocketHandler>();
 
-
-//var context = new DataContext(connectionString);
-//context.Database.EnsureCreated();
-//builder.Services.AddSingleton<IConnectionRegistry, ConnectionRegistry>();
-//builder.Services.AddScoped<ChatHub>();
 builder.Services.AddSwaggerGen();
 
 

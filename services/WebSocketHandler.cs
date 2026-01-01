@@ -38,11 +38,14 @@ namespace ChatServerMVC.services
     public class WsEnvelope
     {
         public string Type { get; set; } = null!;
+        public Guid Id { get; set; }
+        public Guid SenderId { get; set; }
         public Guid RoomId { get; set; }
         public string? Ciphertext { get; set; }
         public string? Nonce { get; set; }
         public int? KeyVersion { get; set; }
         public Guid? AfterMessageId { get; set; }
+        public DateTime Timestamp { get; set; }
     }
 
 
@@ -137,15 +140,25 @@ namespace ChatServerMVC.services
                 msg.RoomId,
                 Convert.FromBase64String(msg.Ciphertext!),
                 Convert.FromBase64String(msg.Nonce!),
-                msg.KeyVersion!.Value
+                msg.KeyVersion!.Value,
+                msg.Timestamp
             );
 
             var members = await _rooms.GetRoomMembers(msg.RoomId);
             foreach (var userId in members)
             {
+                if (userId == msg.SenderId)
+                    continue;
                 if (_connections.TryGet(userId, out var client))
                 {
-                    await client.SendAsync(msg);
+                    try
+                    {
+                        await client.SendAsync(msg);
+                    }
+                    catch
+                    {
+                        _connections.Remove(userId);
+                    }
                 }
             }
         }
@@ -158,11 +171,14 @@ namespace ChatServerMVC.services
             {
                 await client.SendAsync(new WsEnvelope
                 {
+                    Id = m.MessageId,
+                    SenderId = m.SenderId,
                     Type = "send_message",
                     RoomId = msg.RoomId,
                     Ciphertext = m.EncText,
                     Nonce = m.Nonce,
-                    KeyVersion = 1
+                    KeyVersion = 1,
+                    Timestamp = m.Timestamp
                 });
             }
         }

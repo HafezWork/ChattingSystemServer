@@ -15,7 +15,7 @@ namespace ChatServerMVC.services.Services
         {
             _dbFactory = dbFactory;
         }
-        public async Task SaveMessage(Guid user, Guid roomId, byte[] cipherText, byte[] nonce, int keyVersion)
+        public async Task SaveMessage(Guid user, Guid roomId, byte[] cipherText, byte[] nonce, int keyVersion, DateTime TimeStamp)
         {
 
             await using var _db = await _dbFactory.CreateDbContextAsync();
@@ -26,7 +26,8 @@ namespace ChatServerMVC.services.Services
                 CipherText = cipherText,
                 Nonce = nonce,
                 KeyVersion = keyVersion,
-                From = user
+                From = user,
+                CreatedAt = TimeStamp
             });
             _db.SaveChanges();
             return;
@@ -56,11 +57,15 @@ namespace ChatServerMVC.services.Services
                     Timestamp = m.CreatedAt
                 }).ToListAsync();
             }
-            var last = _db.Messages.FindAsync(lastMessageId.Value);
-            var lastMessage = last.Result.CreatedAt;
-            var queryLast = query.Where(m => m.CreatedAt > lastMessage);
+            var last = await _db.Messages.FindAsync(lastMessageId.Value);
+            if (last != null)
+            {
+                var lastMessage = last.CreatedAt;
+                query = (IOrderedQueryable<MessageModel>)query.Where(m => m.CreatedAt > lastMessage);
+            }
+            
 
-            return await queryLast.Select(m => new MessageResponse
+            return await query.Select(m => new MessageResponse
             {
                 MessageId = m.MessageId,
                 SenderId = m.From,
