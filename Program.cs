@@ -10,25 +10,56 @@ using ChatServerMVC.services.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+//
+// =====================
+// Database (Factory)
+// =====================
+//
 builder.Services.AddDbContextFactory<DataContext>(options =>
 {
-    options.UseMySql(builder.Configuration.GetConnectionString("DefaultConnection"), ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("DefaultConnection")));
-});
-builder.Services.AddControllers();
+    var conn = builder.Configuration.GetConnectionString("DefaultConnection");
 
+    options.UseMySql(
+        conn,
+        ServerVersion.AutoDetect(conn)
+    );
+});
+
+//
+// =====================
+// Controllers & Swagger
+// =====================
+//
+builder.Services.AddControllers();
+builder.Services.AddSwaggerGen();
+
+//
+// =====================
+// Application Services
+// =====================
+//
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IRoomService, RoomService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IMessageService, MessageService>();
 builder.Services.AddScoped<IKeyService, KeyService>();
+
+//
+// =====================
+// WebSocket Services
+// =====================
+//
 builder.Services.AddSingleton<IConnectionRegistry, ConnectionRegistry>();
-builder.Services.AddScoped<WebSocketHandler>();
+builder.Services.AddSingleton<WebSocketHandler>();
 
-builder.Services.AddSwaggerGen();
-
-
+//
+// =====================
+// JWT Authentication
+// =====================
+//
 var jwtSettings = builder.Configuration.GetSection("Jwt");
 var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]!);
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -48,63 +79,65 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+//
+// =====================
+// CORS
+// =====================
+//
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy
-            .AllowAnyOrigin()
-            .AllowAnyHeader()
-            .AllowAnyMethod();
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod();
     });
 });
 
-
 var app = builder.Build();
 
+//
+// =====================
+// CORS
+// =====================
+//
 app.UseCors("AllowFrontend");
 
+//
+// =====================
+// Database + WebSocket startup
+// =====================
+//
 using (var scope = app.Services.CreateScope())
 {
-    var wsHandler = scope.ServiceProvider.GetRequiredService<WebSocketHandler>();
+    // DB
+    var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<DataContext>>();
+    using var db = factory.CreateDbContext();
+
+    Console.WriteLine("Applying migrations...");
+    db.Database.Migrate();
+    Console.WriteLine("Database ready.");
+
+    // WebSockets
+    var wsHandler = app.Services.GetRequiredService<WebSocketHandler>();
     wsHandler.Start();
-    var db = scope.ServiceProvider.GetRequiredService<DataContext>();
-    try
-    {
-        if (!db.Database.CanConnect())
-        {
-            Console.WriteLine("Database connection failed. Exiting.");
-            return; // stop the app
-        }
-        Console.WriteLine("Database connection successful.");
-
-
-        Console.WriteLine($"Database exists: {db.Database.GetAppliedMigrations().Any()}");
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Database connection check failed: {ex.Message}");
-        throw; // stop the app
-    }
 }
 
-
-
-
-if (!app.Environment.IsDevelopment())
-{
-    app.UseHsts();
-}
-
-app.UseHttpsRedirection();
+//
+// =====================
+// Middleware
+// =====================
+//
 app.UseRouting();
+
 app.UseSwagger();
 app.UseSwaggerUI();
+
+app.UseAuthentication();
 app.UseAuthorization();
+
 app.UseWebSockets();
 
-
 app.MapControllers();
-//app.UseSwagger();
-//app.UseSwaggerUI();
+
 app.Run();

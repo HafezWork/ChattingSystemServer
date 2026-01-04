@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+
   mysql:
     image: mysql:8.0
     container_name: mysql-chatdb
@@ -15,32 +16,29 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - chat-network
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
       timeout: 20s
       retries: 10
 
   chat-server:
-    image: ${DOCKER_REGISTRY-}chatserver
     build:
       context: .
-      dockerfile: ChatServerMVC/Dockerfile
+      dockerfile: Dockerfile
     container_name: chat-server-app
     depends_on:
       mysql:
         condition: service_healthy
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__DefaultConnection=Server=mysql;Port=3306;Database=ChatDb;User=chatadmin;Password=ChatAdminPass123!
-      - ASPNETCORE_URLS=http://+:8080
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: >
+        Server=mysql;Port=3306;Database=ChatDb;User=chatadmin;Password=ChatAdminPass123!
     ports:
       - "5000:8080"
-      - "5001:8081"
-    volumes:
-      - ~/.aspnet/https:/https:ro
     networks:
       - chat-network
 

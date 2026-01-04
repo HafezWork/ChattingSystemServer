@@ -1,20 +1,17 @@
-﻿using ChatServerMVC.Models;
+﻿using ChatServerMVC.services.Interfaces;
 using Fleck;
-using Microsoft.AspNetCore.Connections;
-using System.Collections.Concurrent;
-using System.Net;
+using Microsoft.Extensions.DependencyInjection;
+using System;
+using System.Collections.Generic;
 using System.Text.Json;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-using ChatServerMVC.Controllers;
-using ChatServerMVC.services.Interfaces;
-using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
-using System.IO;
+using System.Threading.Tasks;
 using System.Web;
-using SuperSocket.ClientEngine;
 
 namespace ChatServerMVC.services
 {
-
+    // =========================
+    // WebSocket Client Wrapper
+    // =========================
     public class WsClient
     {
         public IWebSocketConnection Socket { get; }
@@ -26,8 +23,6 @@ namespace ChatServerMVC.services
             UserId = userId;
         }
 
-
-
         public Task SendAsync(object payload)
         {
             var json = JsonSerializer.Serialize(payload);
@@ -35,6 +30,9 @@ namespace ChatServerMVC.services
         }
     }
 
+    // =========================
+    // WebSocket Envelope
+    // =========================
     public class WsEnvelope
     {
         public string Type { get; set; } = null!;
@@ -48,24 +46,20 @@ namespace ChatServerMVC.services
         public DateTime Timestamp { get; set; }
     }
 
-
+    // =========================
+    // WebSocket Handler
+    // =========================
     public class WebSocketHandler
     {
-        private readonly IMessageService _messages;
-        private readonly IRoomService _rooms;
         private readonly IConnectionRegistry _connections;
-        private readonly IAuthService _auth;
+        private readonly IServiceScopeFactory _scopeFactory;
 
         public WebSocketHandler(
-       IMessageService messages,
-       IRoomService rooms,
-       IConnectionRegistry connections,
-       IAuthService auth)
+            IConnectionRegistry connections,
+            IServiceScopeFactory scopeFactory)
         {
-            _messages = messages;
-            _rooms = rooms;
             _connections = connections;
-            _auth = auth;
+            _scopeFactory = scopeFactory;
         }
 
         public void Start()
@@ -81,21 +75,24 @@ namespace ChatServerMVC.services
 
                 socket.OnOpen = () =>
                 {
-
                     var uri = socket.ConnectionInfo;
                     var query = HttpUtility.ParseQueryString(uri.Path);
-                    var client = query.GetValue("/?access_token");
-                    if (client == null)
+                    var token = query.Get("/?access_token");
+
+                    if (string.IsNullOrEmpty(token))
                     {
                         socket.Close();
                         return;
                     }
-                    var token = client;
+
                     try
                     {
-                        var userId = _auth.ValidateToken(token);
-                        ctx = new WsClient(socket, userId.Result);
-                        _connections.Add(userId.Result, ctx);
+                        using var scope = _scopeFactory.CreateScope();
+                        var auth = scope.ServiceProvider.GetRequiredService<IAuthService>();
+                        var userId = auth.ValidateToken(token).Result;
+
+                        ctx = new WsClient(socket, userId);
+                        _connections.Add(userId, ctx);
                     }
                     catch
                     {
@@ -116,6 +113,7 @@ namespace ChatServerMVC.services
                 };
             });
         }
+
         private async Task Route(WsClient ctx, string message)
         {
             var envelope = JsonSerializer.Deserialize<WsEnvelope>(message);
@@ -135,7 +133,12 @@ namespace ChatServerMVC.services
 
         private async Task HandleSendMessage(WsClient sender, WsEnvelope msg)
         {
-            await _messages.SaveMessage(
+            using var scope = _scopeFactory.CreateScope();
+            var messages = scope.ServiceProvider.GetRequiredService<IMessageService>();
+            var rooms = scope.ServiceProvider.GetRequiredService<IRoomService>();
+
+            // Save message to DB
+            await messages.SaveMessage(
                 sender.UserId,
                 msg.RoomId,
                 Convert.FromBase64String(msg.Ciphertext!),
@@ -144,11 +147,12 @@ namespace ChatServerMVC.services
                 msg.Timestamp
             );
 
-            var members = await _rooms.GetRoomMembers(msg.RoomId);
+            // Broadcast to room members
+            var members = await rooms.GetRoomMembers(msg.RoomId);
             foreach (var userId in members)
             {
-                if (userId == msg.SenderId)
-                    continue;
+                if (userId == msg.SenderId) continue;
+
                 if (_connections.TryGet(userId, out var client))
                 {
                     try
@@ -165,9 +169,12 @@ namespace ChatServerMVC.services
 
         private async Task HandleFetchMessages(WsClient client, WsEnvelope msg)
         {
-            var messages = await _messages.GetMessages(client.UserId, msg.RoomId, msg.AfterMessageId);
+            using var scope = _scopeFactory.CreateScope();
+            var messages = scope.ServiceProvider.GetRequiredService<IMessageService>();
 
-            foreach (var m in messages)
+            var fetchedMessages = await messages.GetMessages(client.UserId, msg.RoomId, msg.AfterMessageId);
+
+            foreach (var m in fetchedMessages)
             {
                 await client.SendAsync(new WsEnvelope
                 {
