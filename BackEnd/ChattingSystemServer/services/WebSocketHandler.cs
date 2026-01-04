@@ -9,9 +9,9 @@ using System.Web;
 
 namespace ChatServerMVC.services
 {
-    // =========================
-    // WebSocket Client Wrapper
-    // =========================
+   
+   
+   
     public class WsClient
     {
         public IWebSocketConnection Socket { get; }
@@ -30,9 +30,9 @@ namespace ChatServerMVC.services
         }
     }
 
-    // =========================
-    // WebSocket Envelope
-    // =========================
+   
+   
+   
     public class WsEnvelope
     {
         public string Type { get; set; } = null!;
@@ -46,9 +46,9 @@ namespace ChatServerMVC.services
         public DateTime Timestamp { get; set; }
     }
 
-    // =========================
-    // WebSocket Handler
-    // =========================
+   
+   
+   
     public class WebSocketHandler
     {
         private readonly IConnectionRegistry _connections;
@@ -137,7 +137,7 @@ namespace ChatServerMVC.services
             var messages = scope.ServiceProvider.GetRequiredService<IMessageService>();
             var rooms = scope.ServiceProvider.GetRequiredService<IRoomService>();
 
-            // Save message to DB
+           
             await messages.SaveMessage(
                 sender.UserId,
                 msg.RoomId,
@@ -147,7 +147,7 @@ namespace ChatServerMVC.services
                 msg.Timestamp
             );
 
-            // Broadcast to room members
+           
             var members = await rooms.GetRoomMembers(msg.RoomId);
             foreach (var userId in members)
             {
@@ -191,3 +191,4 @@ namespace ChatServerMVC.services
         }
     }
 }
+    

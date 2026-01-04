@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chat Application</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Auth Screen -->
+    <div id="authScreen" class="screen active">
+      <div class="auth-container">
+        <h1>Chat Application</h1>
+        <div class="theme-toggle">
+          <button id="themeToggle" title="Toggle dark mode">
+            <span class="icon">🌙</span>
+          </button>
+        </div>
+
+        <div class="auth-tabs">
+          <button class="tab-btn active" data-tab="login">Login</button>
+          <button class="tab-btn" data-tab="register">Register</button>
+        </div>
+
+<!-- Login Form -->
+<form id="loginForm" class="auth-form active">
+  <div class="form-group">
+    <label for="loginUsername">Username</label>
+    <input
+      type="text"
+      id="loginUsername"
+      name="loginUsername"
+      required
+      autocomplete="username"
+    />
+  </div>
+  <div class="form-group">
+    <label for="loginPassword">Password</label>
+    <input
+      type="password"
+      id="loginPassword"
+      name="loginPassword"
+      required
+      autocomplete="current-password"
+    />
+  </div>
+  <div class="form-group">
+    <label for="loginKeyFile">Private Key File *</label>
+    <input
+      type="file"
+      id="loginKeyFile"
+      accept=".json"
+      required
+    />
+    <small style="color: var(--text-secondary); font-size: 0.875rem;">
+      Upload your private key file (username_private_key.json)
+    </small>
+  </div>
+  <button type="submit" class="btn btn-primary">Login</button>
+  <div class="error-message" id="loginError"></div>
+</form>
+
+<!-- Register Form -->
+<form id="registerForm" class="auth-form">
+  <div class="form-group">
+    <label for="registerUsername">Username</label>
+    <input
+      type="text"
+      id="registerUsername"
+      name="registerUsername"
+      required
+      autocomplete="username"
+    />
+  </div>
+  <div class="form-group">
+    <label for="registerPassword">Password</label>
+    <input
+      type="password"
+      id="registerPassword"
+      name="registerPassword"
+      required
+      autocomplete="new-password"
+    />
+  </div>
+  <div class="form-group">
+    <label for="confirmPassword">Confirm Password</label>
+    <input
+      type="password"
+      id="confirmPassword"
+      name="confirmPassword"
+      required
+      autocomplete="new-password"
+    />
+  </div>
+  
+  <!-- Add warning message -->
+  <div style="background: var(--warning-bg, #fff3cd); padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border: 1px solid var(--warning-border, #ffc107);">
+    <strong style="color: var(--warning-text, #856404);">⚠️ Important:</strong>
+    <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem; color: var(--warning-text, #856404);">
+      Your private key will be downloaded after registration. 
+      <strong>Keep it safe!</strong> You'll need it to login on any device.
+    </p>
+  </div>
+  
+  <button type="submit" class="btn btn-primary">Register</button>
+  <div class="error-message" id="registerError"></div>
+</form>
+      </div>
+    </div>
+
+    <!-- Chat Screen -->
+    <div id="chatScreen" class="screen">
+      <div class="chat-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+          <div class="sidebar-header">
+            <h2>Chats</h2>
+            <div class="sidebar-actions">
+              <button
+                id="themeToggleChat"
+                class="icon-btn"
+                title="Toggle dark mode"
+              >
+                <span class="icon">🌙</span>
+              </button>
+              <button id="newChatBtn" class="icon-btn" title="New chat">
+                <span class="icon">➕</span>
+              </button>
+              <button id="logoutBtn" class="icon-btn" title="Logout">
+                <span class="icon">🚪</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="user-info">
+            <div class="user-avatar"></div>
+            <span id="currentUsername">User</span>
+          </div>
+
+          <div class="room-search">
+            <input
+              type="text"
+              id="roomSearchInput"
+              placeholder="Search chats..."
+            />
+          </div>
+
+          <div class="rooms-list" id="roomsList">
+            <!-- Room items will be dynamically added -->
+          </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-main">
+          <div class="chat-placeholder" id="chatPlaceholder">
+            <div class="placeholder-content">
+              <h2>Welcome to Chat</h2>
+              <p>Select a conversation or start a new chat</p>
+            </div>
+          </div>
+
+          <div class="chat-content" id="chatContent" style="display: none">
+            <div class="chat-header">
+              <div class="chat-info">
+                <h3 id="chatTitle">Room Name</h3>
+                <span id="chatSubtitle" class="chat-subtitle"></span>
+              </div>
+              <div class="chat-actions">
+                <button id="refreshMessages" class="icon-btn" title="Refresh">
+                  <span class="icon">🔄</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="messages-container" id="messagesContainer">
+              <div class="messages-list" id="messagesList">
+                <!-- Messages will be dynamically added -->
+              </div>
+            </div>
+
+            <div class="message-input-container">
+              <form id="messageForm">
+                <input
+                  type="text"
+                  id="messageInput"
+                  name="messageInput"
+                  placeholder="Type a message..."
+                  autocomplete="off"
+                  required
+                />
+                <button type="submit" class="btn btn-send">
+                  <span class="icon">📤</span>
+                </button>
+              </form>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- New Chat Modal -->
+    <div id="newChatModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Create New Chat</h3>
+          <button class="close-btn" id="closeModalBtn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-tabs">
+            <button class="tab-btn active" data-tab="dm">Direct Message</button>
+            <button class="tab-btn" data-tab="group">Group Chat</button>
+          </div>
+
+          <!-- DM Form -->
+          <form id="dmForm" class="modal-form active">
+            <div class="form-group">
+              <label for="dmUserId">User ID</label>
+              <input
+                type="text"
+                id="dmUserId"
+                name="dmUserId"
+                placeholder="Enter user ID"
+                required
+              />
+            </div>
+            <button type="submit" class="btn btn-primary">Create DM</button>
+          </form>
+
+          <!-- Group Form -->
+          <form id="groupForm" class="modal-form">
+            <div class="form-group">
+              <label for="groupName">Group Name</label>
+              <input
+                type="text"
+                id="groupName"
+                name="groupName"
+                placeholder="Enter group name"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label for="groupUsers">User IDs (comma-separated)</label>
+              <input
+                type="text"
+                id="groupUsers"
+                name="groupUsers"
+                placeholder="user1, user2, user3"
+              />
+            </div>
+            <button type="submit" class="btn btn-primary">Create Group</button>
+          </form>
+
+          <div class="error-message" id="modalError"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scripts - Load in correct order -->
+    <script src="crypto.js"></script>
+    <script src="indexedDB.js"></script>
+    <script src="api.js"></script>
+    <script src="websocket.js"></script>
+    <script src="auth.js"></script>
+    <script src="chat.js"></script>
+    <script src="app.js"></script>
+    <script>
+      // Initialize app when DOM is ready
+      document.addEventListener("DOMContentLoaded", () => {
+        const app = new App();
+        app.init();
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Ra3d</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- TITLE BAR -->
+  <div class="titlebar">
+    <div class="title">Secure Platform</div>
+    <div class="controls">
+      <div class="btn min" onclick="win.min()"></div>
+      <div class="btn max" onclick="win.max()"></div>
+      <div class="btn close" onclick="win.close()"></div>
+    </div>
+  </div>
+
+  <!-- ROOT VIEW CONTAINER -->
+  <div class="root">
+
+    <!-- ================= AUTH VIEW ================= -->
+    <div class="app view-layer active" id="authView">
+
+      <div class="left">
+        <h1>Secure Platform</h1>
+        <p>Control. Power. Access.</p>
+      </div>
+
+      <div class="right">
+        <div class="card">
+
+          <!-- LOGIN -->
+          <div class="view active" id="loginView">
+            <h2>Login</h2>
+
+            <input type="text" placeholder="Username">
+            <input type="password" placeholder="Password">
+
+            <button class="primary" onclick="doLogin()">Login</button>
+
+            <p class="switch">
+              Don’t have an account?
+              <span onclick="switchView('register')">Register</span>
+            </p>
+          </div>
+
+          <!-- REGISTER -->
+          <div class="view" id="registerView">
+            <h2>Register</h2>
+
+            <input type="text" placeholder="Username">
+            <input type="password" placeholder="Password">
+            <input type="password" placeholder="Confirm Password">
+
+            <button class="primary" onclick="doRegister()">Create Account</button>
+
+            <p class="switch">
+              Already have an account?
+              <span onclick="switchView('login')">Login</span>
+            </p>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================= CHAT VIEW ================= -->
+    <div class="chat-app view-layer" id="chatApp">
+
+      <!-- SERVERS -->
+      <div class="servers">
+        <div class="server active">💬</div>
+        <div class="server">🔐</div>
+        <div class="server">👥</div>
+        <div class="server add">+</div>
+      </div>
+
+      <!-- CHANNELS -->
+      <div class="channels">
+        <div class="channel-header">
+          <h3>Ra3d</h3>
+          <span>🔒 E2EE</span>
+        </div>
+
+        <div class="rooms-header">
+          <h4>Rooms</h4>
+          <button class="add-room-btn" onclick="showCreateRoomDialog()">+</button>
+        </div>
+        <div id="roomsList" class="rooms-list">
+          <!-- Rooms will be dynamically added here -->
+        </div>
+      </div>
+
+      <!-- CHAT -->
+      <div class="chat">
+        <div class="chat-header">
+          <h4># general</h4>
+          <span>🔐 End-to-End Encrypted</span>
+        </div>
+
+        <div class="messages" id="messages">
+          <!-- Messages will be dynamically added here -->
+          <div class="welcome-message">
+            <p>🔒 End-to-end encrypted chat</p>
+            <p>Your messages are secure</p>
+          </div>
+        </div>
+
+        <div class="input-bar">
+          <input id="messageInput" placeholder="Type a message..." />
+          <button onclick="sendMessage()">➤</button>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+  <div id="toast" class="toast"></div>
+  
+  <!-- Create Room Dialog -->
+  <div id="createRoomDialog" class="dialog-overlay">
+    <div class="dialog">
+      <h3>Create Room</h3>
+      <div class="tabs">
+        <button class="tab active" onclick="switchRoomTab('dm')">Direct Message</button>
+        <button class="tab" onclick="switchRoomTab('group')">Group Room</button>
+      </div>
+      
+      <div id="dmTab" class="tab-content active">
+        <input type="text" id="dmUsername" placeholder="Enter username" />
+        <div class="dialog-buttons">
+          <button class="secondary" onclick="hideCreateRoomDialog()">Cancel</button>
+          <button class="primary" onclick="createDMRoom()">Create DM</button>
+        </div>
+      </div>
+      
+      <div id="groupTab" class="tab-content">
+        <input type="text" id="groupRoomName" placeholder="Room name" />
+        <textarea id="groupUsernames" placeholder="Enter usernames (one per line)" rows="5"></textarea>
+        <div class="dialog-buttons">
+          <button class="secondary" onclick="hideCreateRoomDialog()">Cancel</button>
+          <button class="primary" onclick="createGroupRoom()">Create Group</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script src="renderer.js"></script>
+</body>
+</html>

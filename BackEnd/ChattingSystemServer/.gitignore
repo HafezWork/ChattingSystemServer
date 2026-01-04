@@ -1,0 +1,31 @@
+# .NET / C# build artifacts
+bin/
+obj/
+out/
+
+# Visual Studio / Rider / IDE files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.idea/
+
+# Rider IDE
+.idea/
+*.sln.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# NuGet
+*.nupkg
+packages/
+.nuget/
+
+# Logs
+*.log
+
+# Database files (optional)
+*.db

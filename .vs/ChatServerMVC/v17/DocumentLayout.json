@@ -1,0 +1,122 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "D:\\Work Code\\New .Net\\ChattingSystemServer\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{5D2FE50F-B91F-48B4-9EDD-A7D30CB47653}|ChatServerMVC.csproj|d:\\work code\\new .net\\chattingsystemserver\\services\\websockethandler.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{5D2FE50F-B91F-48B4-9EDD-A7D30CB47653}|ChatServerMVC.csproj|solutionrelative:services\\websockethandler.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{5D2FE50F-B91F-48B4-9EDD-A7D30CB47653}|ChatServerMVC.csproj|d:\\work code\\new .net\\chattingsystemserver\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{5D2FE50F-B91F-48B4-9EDD-A7D30CB47653}|ChatServerMVC.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{5D2FE50F-B91F-48B4-9EDD-A7D30CB47653}|ChatServerMVC.csproj|d:\\work code\\new .net\\chattingsystemserver\\docker-compose.yml||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{5D2FE50F-B91F-48B4-9EDD-A7D30CB47653}|ChatServerMVC.csproj|solutionrelative:docker-compose.yml||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{5D2FE50F-B91F-48B4-9EDD-A7D30CB47653}|ChatServerMVC.csproj|d:\\work code\\new .net\\chattingsystemserver\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{5D2FE50F-B91F-48B4-9EDD-A7D30CB47653}|ChatServerMVC.csproj|solutionrelative:appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{5D2FE50F-B91F-48B4-9EDD-A7D30CB47653}|ChatServerMVC.csproj|d:\\work code\\new .net\\chattingsystemserver\\dockerfile||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{5D2FE50F-B91F-48B4-9EDD-A7D30CB47653}|ChatServerMVC.csproj|solutionrelative:dockerfile||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{5D2FE50F-B91F-48B4-9EDD-A7D30CB47653}|ChatServerMVC.csproj|d:\\work code\\new .net\\chattingsystemserver\\setup.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{5D2FE50F-B91F-48B4-9EDD-A7D30CB47653}|ChatServerMVC.csproj|solutionrelative:setup.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "WebSocketHandler.cs",
+              "DocumentMoniker": "D:\\Work Code\\New .Net\\ChattingSystemServer\\services\\WebSocketHandler.cs",
+              "RelativeDocumentMoniker": "services\\WebSocketHandler.cs",
+              "ToolTip": "D:\\Work Code\\New .Net\\ChattingSystemServer\\services\\WebSocketHandler.cs",
+              "RelativeToolTip": "services\\WebSocketHandler.cs",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAAMEAAAAEAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-04T10:12:06.899Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "Program.cs",
+              "DocumentMoniker": "D:\\Work Code\\New .Net\\ChattingSystemServer\\Program.cs",
+              "RelativeDocumentMoniker": "Program.cs",
+              "ToolTip": "D:\\Work Code\\New .Net\\ChattingSystemServer\\Program.cs",
+              "RelativeToolTip": "Program.cs",
+              "ViewState": "AQIAAFwAAAAAAAAAAAAuwI8AAAAAAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-04T10:10:11.616Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "Dockerfile",
+              "DocumentMoniker": "D:\\Work Code\\New .Net\\ChattingSystemServer\\Dockerfile",
+              "RelativeDocumentMoniker": "Dockerfile",
+              "ToolTip": "D:\\Work Code\\New .Net\\ChattingSystemServer\\Dockerfile",
+              "RelativeToolTip": "Dockerfile",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAABQAAAAAAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-01-04T10:08:27.167Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "appsettings.json",
+              "DocumentMoniker": "D:\\Work Code\\New .Net\\ChattingSystemServer\\appsettings.json",
+              "RelativeDocumentMoniker": "appsettings.json",
+              "ToolTip": "D:\\Work Code\\New .Net\\ChattingSystemServer\\appsettings.json",
+              "RelativeToolTip": "appsettings.json",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAABUAAAAAAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-01-04T09:56:08.123Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "docker-compose.yml",
+              "DocumentMoniker": "D:\\Work Code\\New .Net\\ChattingSystemServer\\docker-compose.yml",
+              "RelativeDocumentMoniker": "docker-compose.yml",
+              "ToolTip": "D:\\Work Code\\New .Net\\ChattingSystemServer\\docker-compose.yml",
+              "RelativeToolTip": "docker-compose.yml",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAADIAAAAAAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003775|",
+              "WhenOpened": "2026-01-04T09:56:06.394Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "Setup.md",
+              "DocumentMoniker": "D:\\Work Code\\New .Net\\ChattingSystemServer\\Setup.md",
+              "RelativeDocumentMoniker": "Setup.md",
+              "ToolTip": "D:\\Work Code\\New .Net\\ChattingSystemServer\\Setup.md",
+              "RelativeToolTip": "Setup.md",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAAAgAAAAAAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2026-01-04T09:55:49.652Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
