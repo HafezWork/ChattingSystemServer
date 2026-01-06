@@ -61,6 +61,21 @@ namespace ChatServerMVC.services
             _connections = connections;
             _scopeFactory = scopeFactory;
         }
+        public async Task SendToUser(Guid userId, object payload)
+        {
+            if (_connections.TryGet(userId, out var client))
+            {
+                try
+                {
+                    await client.SendAsync(payload);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[WS] Failed to send to user {userId}: {ex.Message}");
+                    _connections.Remove(userId);
+                }
+            }
+        }
 
         public void Start()
         {
@@ -138,7 +153,7 @@ namespace ChatServerMVC.services
             var rooms = scope.ServiceProvider.GetRequiredService<IRoomService>();
 
            
-            await messages.SaveMessage(
+            var messageId = await messages.SaveMessage(
                 sender.UserId,
                 msg.RoomId,
                 Convert.FromBase64String(msg.Ciphertext!),
@@ -146,12 +161,12 @@ namespace ChatServerMVC.services
                 msg.KeyVersion!.Value,
                 msg.Timestamp
             );
-
+            
+            msg.Id = messageId;
            
             var members = await rooms.GetRoomMembers(msg.RoomId);
             foreach (var userId in members)
             {
-                if (userId == msg.SenderId) continue;
 
                 if (_connections.TryGet(userId, out var client))
                 {

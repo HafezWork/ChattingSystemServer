@@ -1,4 +1,5 @@
 ﻿using System.Security.Claims;
+using ChatServerMVC.Domain.Entities;
 using ChatServerMVC.services.DTOs.Room;
 using ChatServerMVC.services.Interfaces;
 using ChatServerMVC.services.Services;
@@ -65,39 +66,34 @@ namespace ChatServerMVC.Controllers
             return Ok(rooms);
         }
 
-        //    [HttpGet("{roomId}")]
-        //    [Authorize]
-        //    public async Task<IActionResult> GetRoomById(Guid roomId)
-        //    {
-        //        var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+        [HttpGet("{roomId}")]
+        public async Task<IActionResult> GetRoomById(Guid roomId)
+        {
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
-        //        var room = await _rooms.GetRoomById(roomId, userId);
+            var room = await _rooms.GetRoomById(roomId, userId);
 
-        //        if (room == null)
-        //        {
-        //            return NotFound(new { message = "Room not found" });
-        //        }
+            if (room == null)
+            {
+                return NotFound(new { message = "Room not found or you are not a member" });
+            }
 
-        //        // Map to DTO
-        //        var roomDto = new RoomDto
-        //        {
-        //            Id = room.Id,
-        //            Name = room.Name,
-        //            CreatedBy = room.CreatedBy,
-        //            CreatedAt = room.CreatedAt,
-        //            Users = room.Users.Select(u => u.UserId).ToList(),
-        //            Messages = room.Messages.OrderByDescending(m => m.CreatedAt).Take(10).Select(m => new MessageDto
-        //            {
-        //                Content = m.Content,
-        //                EncText = m.EncText,
-        //                Nonce = m.Nonce,
-        //                CreatedAt = m.CreatedAt,
-        //                SenderId = m.SenderId
-        //            }).ToList()
-        //        };
+            return Ok(room);
+        }
 
-        //        return Ok(roomDto);
-        //    }
-        //}
+        [HttpPost("{roomId}/members")]
+        public async Task<IActionResult> AddMember(Guid roomId, [FromBody] AddMemberRequest request)
+        {
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            await _rooms.AddtoRoom(
+                userId,
+                roomId,
+                request.Users,
+                request.EncryptionKeys.Select(k =>
+                (k.UserId, k.Key)
+                ).ToList()
+            );
+            return Ok(new { message = "Members added successfully", roomId });
+        }
     }
 }

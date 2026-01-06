@@ -15,13 +15,14 @@ namespace ChatServerMVC.services.Services
         {
             _dbFactory = dbFactory;
         }
-        public async Task SaveMessage(Guid user, Guid roomId, byte[] cipherText, byte[] nonce, int keyVersion, DateTime TimeStamp)
+        public async Task<Guid> SaveMessage(Guid user, Guid roomId, byte[] cipherText, byte[] nonce, int keyVersion, DateTime TimeStamp)
         {
 
             await using var _db = await _dbFactory.CreateDbContextAsync();
+            var messageId = Guid.NewGuid();
             _db.Messages.Add(new MessageModel
             {
-                MessageId = Guid.NewGuid(),
+                MessageId = messageId,
                 RoomId = roomId,
                 CipherText = cipherText,
                 Nonce = nonce,
@@ -30,7 +31,7 @@ namespace ChatServerMVC.services.Services
                 CreatedAt = TimeStamp
             });
             _db.SaveChanges();
-            return;
+            return messageId;
         }
 
         public async Task<List<MessageResponse>> GetMessages(Guid user, Guid roomId, Guid? lastMessageId)

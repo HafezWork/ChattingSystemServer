@@ -22,10 +22,18 @@ contextBridge.exposeInMainWorld("api", {
   createGroup: (roomName, peerUsernames) => ipcRenderer.invoke("room:createGroup", roomName, peerUsernames),
   listRooms: () => ipcRenderer.invoke("room:list"),
   getRoomKey: (roomId) => ipcRenderer.invoke("room:getKey", roomId),
+  getGroupInfo: (roomId) => ipcRenderer.invoke("room:getInfo", roomId),
+  addMembersToGroup: (roomId, usernames) => ipcRenderer.invoke("room:addMembers", roomId, usernames),
+  transferAdmin: (roomId, newAdminUserId) => ipcRenderer.invoke("room:transferAdmin", roomId, newAdminUserId),
+  leaveGroup: (roomId, newAdminUserId) => ipcRenderer.invoke("room:leave", roomId, newAdminUserId),
   
   // Message storage APIs
   storeMessage: (data) => ipcRenderer.invoke("message:store", data),
+  updateMessageId: (roomId, ciphertext, newMessageId) => 
+    ipcRenderer.invoke("message:updateId", { roomId, ciphertext, newMessageId }),
   getMessagesForRoom: (roomId) => ipcRenderer.invoke("message:getForRoom", roomId),
+  getMessagesForRoomPaginated: (roomId, limit, offset) => 
+    ipcRenderer.invoke("message:getForRoomPaginated", { roomId, limit, offset }),
   getLastMessageId: (roomId) => ipcRenderer.invoke("message:getLastId", roomId),
   
   // WebSocket operations

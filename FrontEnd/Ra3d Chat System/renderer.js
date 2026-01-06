@@ -12,7 +12,14 @@ const state = {
   jwt: null,
   userCache: new Map(), // Cache for user info (userId -> {username, publicKey})
   pendingMessages: null, // Temporary storage for batching historical messages
-  unreadCounts: new Map() // roomId -> unread count
+  unreadCounts: new Map(), // roomId -> unread count
+  displayedMessages: new Set(), // Track displayed message IDs to prevent duplicates
+  isFetchingHistory: false, // Flag to prevent notifications during initial fetch
+  pagination: {
+    pageSize: 50, // Load 50 messages at a time
+    hasMore: new Map(), // roomId -> boolean (has more messages to load)
+    isLoading: false // Prevent multiple simultaneous loads
+  }
 }
 
 // ==================== UTILITY FUNCTIONS ====================
@@ -50,12 +57,69 @@ function generateRoomKey() {
   return arrayBufferToBase64(array)
 }
 
+/**
+ * Extract peer user ID from DM room name formatted as "{firstUserId}-{secondUserId}"
+ * GUIDs are 36 characters long (including dashes), so room name is 73 chars total
+ * @param {string} roomName - The room name in format "userId1-userId2"
+ * @param {string} currentUserId - Current user's ID
+ * @returns {string|null} The other user's ID or null if parsing fails
+ */
+function extractPeerIdFromRoomName(roomName, currentUserId) {
+  if (!roomName || !currentUserId) return null
+  
+  // GUIDs are 36 characters: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  // Room name format: {guid1}-{guid2} = 36 + 1 + 36 = 73 characters
+  if (roomName.length !== 73) return null
+  
+  const firstUserId = roomName.substring(0, 36)
+  const secondUserId = roomName.substring(37, 73)
+  
+  // Return the ID that isn't the current user's
+  return firstUserId === currentUserId ? secondUserId : firstUserId
+}
+
+/**
+ * Check if a room is a DM (based on name format)
+ * DM format: {guid}-{guid} (73 chars)
+ * Group chat: Any other format
+ */
+function isDMRoom(roomName) {
+  if (!roomName) return false
+  // DM rooms have exactly 73 characters (36 + 1 + 36)
+  return roomName.length === 73
+}
+
 // ==================== VIEW SWITCHING ====================
 
 function switchView(viewName) {
   const views = document.querySelectorAll('.view')
   views.forEach(v => v.classList.remove('active'))
-  document.getElementById(viewName + 'View').classList.add('active')
+  
+  const targetView = document.getElementById(viewName + 'View')
+  targetView.classList.add('active')
+  
+  // Force reflow to ensure DOM is updated
+  targetView.offsetHeight
+  
+  // Re-enable all inputs, buttons and focus the first input
+  requestAnimationFrame(() => {
+    const inputs = targetView.querySelectorAll('input')
+    inputs.forEach(input => {
+      input.disabled = false
+      input.readOnly = false
+      input.tabIndex = 0
+    })
+    
+    const buttons = targetView.querySelectorAll('button')
+    buttons.forEach(button => {
+      button.disabled = false
+      button.tabIndex = 0
+    })
+    
+    if (inputs[0]) {
+      inputs[0].focus()
+    }
+  })
 }
 
 function showChatApp() {
@@ -99,11 +163,18 @@ async function doRegister() {
       const saveResult = await api.savePrivateKey(result.privateKey, result.username)
       
       if (saveResult.success) {
-        alert(`Registration successful!\n\nYour private key has been saved to:\n${saveResult.filePath}\n\nKeep this file safe! You'll need it to login.`)
-        switchView('login')
+        // Clear registration form first
         inputs[0].value = ''
         inputs[1].value = ''
         inputs[2].value = ''
+        
+        // Show success message
+        alert(`Registration successful!\n\nYour private key has been saved to:\n${saveResult.filePath}\n\nKeep this file safe! You'll need it to login.`)
+        
+        // Switch view after alert is dismissed (prevents input blocking)
+        setTimeout(() => {
+          switchView('login')
+        }, 100)
       } else if (!saveResult.canceled) {
         alert('Failed to save private key: ' + saveResult.error)
       }
@@ -117,9 +188,12 @@ async function doRegister() {
  * Handle Login
  */
 async function doLogin() {
+  console.log('[AUTH] Login button clicked')
   const inputs = document.querySelectorAll('#loginView input')
   const username = inputs[0].value.trim()
   const password = inputs[1].value
+  
+  console.log('[AUTH] Username:', username, 'Password length:', password.length)
 
   if (!username || !password) {
     alert('Please fill in all fields')
@@ -127,6 +201,7 @@ async function doLogin() {
   }
 
   try {
+    console.log('[AUTH] Opening private key file dialog...')
     // Prompt user to select private key file
     const keyFileResult = await api.openPrivateKey()
     
@@ -149,6 +224,9 @@ async function doLogin() {
       }
       state.isLoggedIn = true
       state.jwt = result.jwt // Store JWT for API calls and WebSocket
+      
+      // Update UI with username
+      document.getElementById('currentUsername').textContent = username
       
       showChatApp()
       await initializeChat()
@@ -195,6 +273,9 @@ async function initializeChat() {
       const wsResult = await api.ws.connect(state.jwt)
       if (wsResult.success) {
         console.log('[CHAT] WebSocket connected successfully')
+        
+        // Fetch latest messages for all rooms after connection
+        await fetchAllRoomMessages()
       } else {
         console.error('[CHAT] WebSocket connection failed:', wsResult.error)
       }
@@ -206,6 +287,43 @@ async function initializeChat() {
   }
   
   console.log('[CHAT] Chat initialized')
+}
+
+/**
+ * Fetch latest messages for all rooms
+ */
+async function fetchAllRoomMessages() {
+  try {
+    state.isFetchingHistory = true // Disable notifications during history fetch
+    
+    const rooms = await api.listRooms()
+    console.log(`[CHAT] Fetching latest messages for ${rooms.length} rooms`)
+    
+    for (const room of rooms) {
+      const roomId = room.id || room.room_id
+      
+      // Get the last message ID we have locally
+      const lastMessageId = await api.getLastMessageId(roomId)
+      
+      // Fetch updates from server
+      console.log(`[CHAT] Fetching updates for room ${roomId} after message:`, lastMessageId)
+      await api.ws.fetchMessages(roomId, lastMessageId)
+      
+      // Small delay between requests to avoid overwhelming the server
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    
+    console.log('[CHAT] Finished fetching messages for all rooms')
+    
+    // Wait a bit for messages to be processed before re-enabling notifications
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    console.log('[CHAT] Re-enabling notifications')
+  } catch (error) {
+    console.error('[CHAT] Error fetching all room messages:', error)
+  } finally {
+    state.isFetchingHistory = false // Re-enable notifications for real-time messages
+  }
 }
 
 /**
@@ -252,6 +370,15 @@ function handleIncomingMessage(envelope) {
     handleNewMessage(envelope)
   } else if (envelope.Type === 'fetch_response') {
     handleFetchedMessages(envelope)
+  } else if (envelope.Type === 'room_created' || envelope.Type === 'RoomCreated') {
+    // New room created - refresh rooms list
+    console.log('[WS] Room created notification received:', envelope)
+    console.log('[WS] Calling loadRooms()...')
+    loadRooms().then(() => {
+      console.log('[WS] Rooms reloaded successfully')
+    }).catch(err => {
+      console.error('[WS] Error reloading rooms:', err)
+    })
   } else {
     console.log('[WS] Unknown envelope type:', envelope.Type)
   }
@@ -297,6 +424,9 @@ async function handleNewMessage(envelope) {
     if (!isCurrentRoom) {
       console.log('[CHAT] Message for different room, storing and updating UI')
       
+      // Check if message is from current user (don't count own messages as unread)
+      const isMine = envelope.SenderId === state.currentUser?.userId
+      
       // Store to local DB (even if not viewing this room)
       await api.storeMessage({
         messageId: envelope.Id || envelope.MessageId || crypto.randomUUID(),
@@ -323,17 +453,68 @@ async function handleNewMessage(envelope) {
         console.error('[CHAT] Failed to decrypt for preview:', error)
       }
       
-      // Increment unread count
-      const currentUnread = state.unreadCounts.get(envelope.RoomId) || 0
-      state.unreadCounts.set(envelope.RoomId, currentUnread + 1)
+      // Only increment unread count if message is NOT from current user
+      let unreadCount = state.unreadCounts.get(envelope.RoomId) || 0
+      if (!isMine) {
+        unreadCount = unreadCount + 1
+        state.unreadCounts.set(envelope.RoomId, unreadCount)
+        
+        // Show system notification only for real-time messages (not during history fetch)
+        if (!state.isFetchingHistory) {
+          // Get sender name
+          let senderName = 'User'
+          if (state.userCache.has(envelope.SenderId)) {
+            senderName = state.userCache.get(envelope.SenderId).username
+          } else {
+            try {
+              const userResult = await api.getUserById(envelope.SenderId)
+              if (userResult.success && userResult.user) {
+                senderName = userResult.user.userName || userResult.user.UserName || 'User'
+                state.userCache.set(envelope.SenderId, { username: senderName })
+              }
+            } catch (error) {
+              console.error('[CHAT] Failed to fetch sender for notification:', error)
+            }
+          }
+          
+          // Get room name
+          let roomName = `Room ${envelope.RoomId.substring(0, 8)}`
+          try {
+            const rooms = await api.listRooms()
+            const room = rooms.find(r => (r.id || r.room_id) === envelope.RoomId)
+            if (room) {
+              // For DM rooms, extract peer username
+              if (room.name && room.name.length === 73) { // DM format: userId-userId
+                const peerId = extractPeerIdFromRoomName(room.name, state.currentUser?.userId)
+                if (peerId) {
+                  try {
+                    const peerInfo = await api.getUserById(peerId)
+                    if (peerInfo.success && peerInfo.user) {
+                      roomName = `@${peerInfo.user.userName || peerInfo.user.username || peerId}`
+                    }
+                  } catch (err) {
+                    console.error('[CHAT] Failed to fetch peer for notification:', err)
+                  }
+                }
+              } else {
+                roomName = room.name || roomName
+              }
+            }
+          } catch (error) {
+            console.error('[CHAT] Failed to fetch room for notification:', error)
+          }
+          
+          showNotification(`${senderName} in ${roomName}`, messagePreview)
+        }
+        
+        console.log('[CHAT] New message in room:', envelope.RoomId, 'Unread:', unreadCount)
+      } else {
+        console.log('[CHAT] Own message in different room:', envelope.RoomId)
+      }
       
       // Update the specific room's preview in the UI
-      updateRoomPreview(envelope.RoomId, messagePreview, currentUnread + 1)
+      updateRoomPreview(envelope.RoomId, messagePreview, unreadCount)
       
-      // Show system notification
-      showNotification('New Message', messagePreview)
-      
-      console.log('[CHAT] New message in room:', envelope.RoomId, 'Unread:', currentUnread + 1)
       return
     }
 
@@ -374,26 +555,99 @@ async function handleNewMessage(envelope) {
       }
     }
 
-    // Store to local DB
-    await api.storeMessage({
-      messageId: envelope.Id || envelope.MessageId || crypto.randomUUID(),
-      roomId: envelope.RoomId,
-      senderId: envelope.SenderId,
-      ciphertext: envelope.Ciphertext,
-      nonce: envelope.Nonce,
-      timestamp: envelope.Timestamp || envelope.CreatedAt || new Date().toISOString()
-    })
+    // Store to local DB or update temp ID with server ID
+    if (isMine) {
+      // Update temp ID with real server ID
+      await api.updateMessageId(
+        envelope.RoomId,
+        envelope.Ciphertext,
+        envelope.Id || envelope.MessageId
+      )
+    } else {
+      // Store new message from other users
+      await api.storeMessage({
+        messageId: envelope.Id || envelope.MessageId || crypto.randomUUID(),
+        roomId: envelope.RoomId,
+        senderId: envelope.SenderId,
+        ciphertext: envelope.Ciphertext,
+        nonce: envelope.Nonce,
+        timestamp: envelope.Timestamp || envelope.CreatedAt || new Date().toISOString()
+      })
+    }
 
-    // Display message
-    displayMessage({
-      messageId: envelope.Id || envelope.MessageId || crypto.randomUUID(),
-      roomId: envelope.RoomId,
-      senderId: envelope.SenderId,
-      content: decrypted,
-      timestamp: new Date(),
-      isMine,
-      senderName
-    })
+    // Display message (use proper timestamp for deduplication)
+    // Ensure timestamp is treated as UTC if it doesn't have Z suffix
+    let timestamp
+    if (envelope.Timestamp || envelope.CreatedAt) {
+      const timeStr = envelope.Timestamp || envelope.CreatedAt
+      // Add Z suffix if missing to force UTC parsing
+      const isoString = timeStr.endsWith('Z') ? timeStr : timeStr + 'Z'
+      timestamp = new Date(isoString)
+    } else {
+      timestamp = new Date()
+    }
+    
+    // If this is our own message (server echo), update the existing message UI
+    if (isMine) {
+      const contentHash = `${envelope.Ciphertext}-${envelope.SenderId}`.substring(0, 50)
+      const timestampSeconds = Math.floor(timestamp.getTime() / 1000)
+      const messageKey = `${envelope.RoomId}-${contentHash}-${timestampSeconds}`
+      
+      // Find and update the existing message element to remove sending indicator
+      const existingMsg = document.querySelector(`[data-message-key="${messageKey}"]`)
+      if (existingMsg) {
+        const timeEl = existingMsg.querySelector('.time')
+        if (timeEl) {
+          const time = timestamp.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          })
+          timeEl.innerHTML = time // Remove sending indicator
+        }
+        console.log('[CHAT] Updated sent message confirmation')
+      } else {
+        // Message not found in UI, decrypt and display
+        const decrypted = await decryptMessage(
+          envelope.Ciphertext,
+          envelope.Nonce,
+          roomKey
+        )
+        
+        displayMessage({
+          messageId: envelope.Id || envelope.MessageId,
+          roomId: envelope.RoomId,
+          senderId: envelope.SenderId,
+          content: decrypted,
+          ciphertext: envelope.Ciphertext, // Required for messageKey matching
+          timestamp: timestamp,
+          isMine,
+          senderName
+        })
+      }
+    } else {
+      // Not our message, decrypt and display normally
+      const decrypted = await decryptMessage(
+        envelope.Ciphertext,
+        envelope.Nonce,
+        roomKey
+      )
+      
+      displayMessage({
+        messageId: envelope.Id || envelope.MessageId,
+        roomId: envelope.RoomId,
+        senderId: envelope.SenderId,
+        content: decrypted,
+        ciphertext: envelope.Ciphertext, // Required for messageKey matching
+        timestamp: timestamp,
+        isMine,
+        senderName
+      })
+    }
+    
+    // Update room preview for current room too
+    const preview = decrypted.length > 50 ? decrypted.substring(0, 50) + '...' : decrypted
+    updateRoomPreview(envelope.RoomId, preview, 0)
     
     console.log('[CHAT] Message stored and displayed:', decrypted)
   } catch (error) {
@@ -433,29 +687,54 @@ async function sendMessage() {
     // Encrypt message
     const { ciphertext, nonce } = await encryptMessage(content, roomKey)
 
-    // Send via WebSocket
+    // Create timestamp for both optimistic UI and server
+    const timestamp = new Date()
+    const timestampISO = timestamp.toISOString()
+    
+    // Generate temporary message ID
+    const tempMessageId = `temp-${Date.now()}-${Math.random()}`
+    
+    // Store to local database immediately (prevents showing as unread after logout/login)
+    await api.storeMessage({
+      messageId: tempMessageId,
+      roomId: state.currentRoom,
+      senderId: state.currentUser.userId,
+      ciphertext: ciphertext,
+      nonce: nonce,
+      timestamp: timestampISO
+    })
+    
+    // Display message immediately (optimistic UI)
+    displayMessage({
+      messageId: tempMessageId,
+      roomId: state.currentRoom,
+      senderId: state.currentUser.userId,
+      content: content,
+      ciphertext: ciphertext, // Required for messageKey matching
+      timestamp: timestamp,
+      isMine: true,
+      senderName: state.currentUser.username,
+      isSending: true
+    })
+    
+    // Update room preview
+    const preview = content.length > 50 ? content.substring(0, 50) + '...' : content
+    updateRoomPreview(state.currentRoom, preview, 0)
+
+    // Clear input immediately
+    input.value = ''
+
+    // Send via WebSocket with timestamp
     const sent = await api.ws.sendMessage(
       state.currentRoom,
       ciphertext,
       nonce,
       state.currentUser.userId,
-      1 // keyVersion
+      1, // keyVersion
+      timestampISO
     )
 
-    if (sent.success) {
-      // Display message immediately (optimistic UI)
-      displayMessage({
-        messageId: crypto.randomUUID(),
-        roomId: state.currentRoom,
-        senderId: state.currentUser.userId,
-        content: content,
-        timestamp: new Date(),
-        isMine: true
-      })
-
-      // Clear input
-      input.value = ''
-    } else {
+    if (!sent.success) {
       alert('Failed to send message. Message queued for retry.')
     }
   } catch (error) {
@@ -466,8 +745,9 @@ async function sendMessage() {
 
 /**
  * Display stored encrypted message (decrypt first)
+ * @param {boolean} prepend - If true, add to top instead of bottom
  */
-async function displayStoredMessage(storedMsg) {
+async function displayStoredMessage(storedMsg, prepend = false) {
   try {
     // Get room key
     const roomKey = state.roomKeys.get(storedMsg.room_id)
@@ -504,16 +784,22 @@ async function displayStoredMessage(storedMsg) {
       }
     }
     
+    // Parse timestamp - ensure UTC if no Z suffix
+    const timeStr = storedMsg.created_at
+    const isoString = timeStr.endsWith('Z') ? timeStr : timeStr + 'Z'
+    const timestamp = new Date(isoString)
+    
     // Display
     displayMessage({
       messageId: storedMsg.message_id,
       roomId: storedMsg.room_id,
       senderId: storedMsg.sender_uuid,
       content: decrypted,
-      timestamp: new Date(storedMsg.created_at),
+      ciphertext: storedMsg.content, // Required for messageKey matching
+      timestamp: timestamp,
       isMine: isMine,
       senderName: senderName
-    })
+    }, prepend)
   } catch (error) {
     console.error('[CHAT] Error displaying stored message:', error)
   }
@@ -521,11 +807,26 @@ async function displayStoredMessage(storedMsg) {
 
 /**
  * Display message in UI
+ * @param {boolean} prepend - If true, add to top instead of bottom
  */
-function displayMessage(message) {
+function displayMessage(message, prepend = false) {
   const messagesDiv = document.getElementById('messages')
   
-  // Remove welcome message if it exists
+  // Create a unique key based on ciphertext and sender for better deduplication
+  // MUST use ciphertext (not plaintext) to match server echo in handleNewMessage()
+  const contentHash = `${message.ciphertext}-${message.senderId}`.substring(0, 50)
+  const timestampSeconds = Math.floor(message.timestamp.getTime() / 1000)
+  
+  // Use content-based key for deduplication (handles both temp and real IDs)
+  const messageKey = `${message.roomId}-${contentHash}-${timestampSeconds}`
+  
+  // Check for duplicate
+  if (state.displayedMessages.has(messageKey)) {
+    console.log('[DISPLAY] Skipping duplicate message:', messageKey)
+    return
+  }
+  state.displayedMessages.add(messageKey)
+  
   const welcomeMsg = messagesDiv.querySelector('.welcome-message')
   if (welcomeMsg) {
     welcomeMsg.remove()
@@ -533,24 +834,37 @@ function displayMessage(message) {
   
   const messageEl = document.createElement('div')
   messageEl.className = 'message' + (message.isMine ? ' mine' : '')
+  messageEl.dataset.messageKey = messageKey
   
   const time = message.timestamp.toLocaleTimeString('en-US', {
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    hour12: true
   })
   
   const senderName = message.isMine ? 'You' : (message.senderName || 'User')
+  const sendingIndicator = message.isSending ? ' <span style="opacity: 0.5; font-size: 0.8em">⏳</span>' : ''
   
   messageEl.innerHTML = `
     <div class="message-header">
       <span class="sender">${senderName}</span>
-      <span class="time">${time}</span>
+      <span class="time">${time}${sendingIndicator}</span>
     </div>
     <div class="message-content">${escapeHtml(message.content)}</div>
   `
   
-  messagesDiv.appendChild(messageEl)
-  messagesDiv.scrollTop = messagesDiv.scrollHeight
+  if (prepend) {
+    // Insert after load-more button if it exists
+    const loadMoreBtn = messagesDiv.querySelector('.load-more-btn')
+    if (loadMoreBtn) {
+      messagesDiv.insertBefore(messageEl, loadMoreBtn.nextSibling)
+    } else {
+      messagesDiv.insertBefore(messageEl, messagesDiv.firstChild)
+    }
+  } else {
+    messagesDiv.appendChild(messageEl)
+    messagesDiv.scrollTop = messagesDiv.scrollHeight
+  }
 }
 
 /**
@@ -698,28 +1012,76 @@ function updateRoomPreview(roomId, messageText, unreadCount) {
 
 // ==================== ROOM MANAGEMENT ====================
 
+// Debounce timer for loadRooms
+let loadRoomsTimeout = null
+
 /**
- * Load rooms from database
+ * Load rooms from database (debounced to prevent duplicates)
  */
 async function loadRooms() {
-  try {
-    const rooms = await api.listRooms()
-    console.log('[ROOM] Loaded rooms:', rooms)
-    const roomsList = document.getElementById('roomsList')
-    roomsList.innerHTML = ''
+  // Clear any pending loadRooms call
+  if (loadRoomsTimeout) {
+    console.log('[ROOM] Debouncing loadRooms call')
+    clearTimeout(loadRoomsTimeout)
+  }
+  
+  // Debounce to prevent duplicate calls within 300ms
+  return new Promise((resolve) => {
+    loadRoomsTimeout = setTimeout(async () => {
+      try {
+        const rooms = await api.listRooms()
+        console.log('[ROOM] Loaded rooms:', rooms)
+        const roomsList = document.getElementById('roomsList')
+        const archivedRoomsList = document.getElementById('archivedRoomsList')
+        roomsList.innerHTML = ''
+        archivedRoomsList.innerHTML = ''
+        
+        // Separate active and archived rooms
+        const activeRooms = []
+        const archivedRooms = []
+        
+        for (const room of rooms) {
+          if (room.archived || room.Archived) {
+            archivedRooms.push(room)
+          } else {
+            activeRooms.push(room)
+          }
+        }
+        
+        if (activeRooms.length === 0) {
+          roomsList.innerHTML = '<div class="no-rooms">No rooms yet. Create one!</div>'
+        }
+        
+        if (archivedRooms.length === 0) {
+          archivedRoomsList.innerHTML = '<div class="no-rooms">No archived rooms</div>'
+        }
     
-    if (rooms.length === 0) {
-      roomsList.innerHTML = '<div class="no-rooms">No rooms yet. Create one!</div>'
-      return
-    }
-    
-    for (const room of rooms) {
+    // Render active rooms
+    for (const room of activeRooms) {
       const roomEl = document.createElement('div')
       roomEl.className = 'room-item'
       
       // Use the mapped room properties (id, name, type)
       const roomId = room.id || room.room_id
-      const roomName = room.name || `Room ${roomId.substring(0, 8)}`
+      let roomName = room.name || `Room ${roomId.substring(0, 8)}`
+      
+      // Determine if it's a DM or group
+      const isDM = isDMRoom(room.name)
+      const roomIcon = isDM ? '👤' : '👥'
+      
+      // For DM rooms, try to extract peer ID and fetch their username
+      const peerId = extractPeerIdFromRoomName(room.name, state.currentUser?.userId)
+      if (peerId) {
+        try {
+          const peerInfo = await api.getUserById(peerId)
+          if (peerInfo.success && peerInfo.user) {
+            roomName = `@${peerInfo.user.userName || peerInfo.user.username || peerId}`
+          }
+        } catch (error) {
+          console.error('[ROOM] Failed to fetch peer info:', error)
+          roomName = `DM-${peerId.substring(0, 8)}`
+        }
+      }
       
       // Get last message from local DB and decrypt it
       let lastMessageText = 'No messages yet'
@@ -760,7 +1122,7 @@ async function loadRooms() {
       
       roomEl.innerHTML = `
         <div class="room-header-row">
-          <div class="room-name">${roomName}</div>
+          <div class="room-name"><span class="room-icon">${roomIcon}</span> ${roomName}</div>
           ${unreadBadge}
         </div>
         <div class="room-last-message">${lastMessageText}</div>
@@ -769,17 +1131,65 @@ async function loadRooms() {
       roomEl.onclick = () => selectRoom(roomId)
       roomsList.appendChild(roomEl)
     }
-  } catch (error) {
-    console.error('[ROOM] Error loading rooms:', error)
-  }
+    
+    // Render archived rooms
+    for (const room of archivedRooms) {
+      const roomEl = document.createElement('div')
+      roomEl.className = 'room-item archived'
+      
+      const roomId = room.id || room.room_id
+      let roomName = room.name || `Room ${roomId.substring(0, 8)}`
+      
+      // Determine if it's a DM or group
+      const isDM = isDMRoom(room.name)
+      const roomIcon = isDM ? '👤' : '👥'
+      
+      // For DM rooms, extract peer username
+      const peerId = extractPeerIdFromRoomName(room.name, state.currentUser?.userId)
+      if (peerId) {
+        try {
+          const peerInfo = await api.getUserById(peerId)
+          if (peerInfo.success && peerInfo.user) {
+            roomName = `@${peerInfo.user.userName || peerInfo.user.username || peerId}`
+          }
+        } catch (error) {
+          roomName = `DM-${peerId.substring(0, 8)}`
+        }
+      }
+      
+      roomEl.innerHTML = `
+        <div class="room-header-row">
+          <div class="room-name"><span class="room-icon">${roomIcon}</span> ${roomName} <span class="archived-badge">📦</span></div>
+        </div>
+        <div class="room-last-message">Left group - Read only</div>
+      `
+      roomEl.dataset.roomId = roomId
+      roomEl.onclick = () => selectRoom(roomId, true)
+      archivedRoomsList.appendChild(roomEl)
+    }
+    
+        resolve()
+      } catch (error) {
+        console.error('[ROOM] Error loading rooms:', error)
+        resolve()
+      }
+    }, 300)
+  })
 }
 
 /**
  * Select a room
+ * @param {boolean} isArchived - Whether this is an archived (read-only) room
  */
-async function selectRoom(roomId) {
+async function selectRoom(roomId, isArchived = false) {
   try {
-    console.log('[ROOM] Selecting room:', roomId)
+    // Don't reload if already in this room
+    if (state.currentRoom === roomId) {
+      console.log('[ROOM] Already in this room, ignoring click')
+      return
+    }
+    
+    console.log('[ROOM] Selecting room:', roomId, 'Archived:', isArchived)
     
     // Get room key
     const keyResult = await api.getRoomKey(roomId)
@@ -796,13 +1206,40 @@ async function selectRoom(roomId) {
     // Clear pending messages to avoid stale batch
     state.pendingMessages = []
     
+    // Clear displayed messages set for fresh room view
+    state.displayedMessages.clear()
+    
     // Clear unread count for this room
     state.unreadCounts.set(roomId, 0)
+    
+    // Remove unread badge from UI
+    const roomEl = document.querySelector(`.room-item[data-room-id="${roomId}"]`)
+    if (roomEl) {
+      const badge = roomEl.querySelector('.unread-badge')
+      if (badge) {
+        badge.remove()
+      }
+    }
     
     // Update UI - find the room to get its name
     const rooms = await api.listRooms()
     const room = rooms.find(r => (r.id || r.room_id) === roomId)
-    const roomName = room ? (room.name || `Room ${roomId.substring(0, 8)}`) : `Room ${roomId.substring(0, 8)}`
+    let roomName = room ? (room.name || `Room ${roomId.substring(0, 8)}`) : `Room ${roomId.substring(0, 8)}`
+    
+    // For DM rooms, extract peer ID and fetch their username
+    if (room && room.name) {
+      const peerId = extractPeerIdFromRoomName(room.name, state.currentUser?.userId)
+      if (peerId) {
+        try {
+          const peerInfo = await api.getUserById(peerId)
+          if (peerInfo.success && peerInfo.user) {
+            roomName = `@${peerInfo.user.userName || peerInfo.user.username || peerId}`
+          }
+        } catch (error) {
+          console.error('[ROOM] Failed to fetch peer info for header:', error)
+        }
+      }
+    }
     
     document.querySelectorAll('.room-item').forEach(el => {
       el.classList.remove('active')
@@ -812,33 +1249,190 @@ async function selectRoom(roomId) {
     })
     
     // Update chat header
-    document.querySelector('.chat-header h4').textContent = `# ${roomName}`
+    document.querySelector('.chat-header h4').textContent = `${roomName}${isArchived ? ' 📦' : ''}`
+    
+    // Show/hide leave button based on room type and archived status
+    // Group chat = NOT a DM (name is not in {guid}-{guid} format)
+    const leaveBtn = document.getElementById('leaveGroupBtn')
+    const roomNameToCheck = room ? room.name : null
+    const isGroupChat = roomNameToCheck && !isDMRoom(roomNameToCheck)
+    if (leaveBtn) {
+      leaveBtn.style.display = (isGroupChat && !isArchived) ? 'block' : 'none'
+    }
+    
+    // Show/hide group info button (only for groups, not DMs)
+    const groupInfoBtn = document.getElementById('groupInfoBtn')
+    if (groupInfoBtn) {
+      groupInfoBtn.style.display = (isGroupChat && !isArchived) ? 'block' : 'none'
+    }
+    
+    // Update admin buttons (Add Members) based on creator status
+    if (isGroupChat && !isArchived) {
+      await updateAdminButtons(roomId)
+    } else {
+      const addMembersBtn = document.getElementById('addMembersBtn')
+      if (addMembersBtn) {
+        addMembersBtn.style.display = 'none'
+      }
+    }
+    
+    // Show/hide message input based on archived status
+    const inputBar = document.querySelector('.input-bar')
+    if (inputBar) {
+      inputBar.style.display = isArchived ? 'none' : 'flex'
+    }
+    
+    // Show archived notice if room is archived
+    if (isArchived) {
+      const messagesDiv = document.getElementById('messages')
+      const notice = document.createElement('div')
+      notice.className = 'archived-notice'
+      notice.innerHTML = '📦 <strong>Archived Room</strong> - You left this group. Messages are read-only.'
+      messagesDiv.appendChild(notice)
+    }
     
     // Clear messages UI
     const messagesDiv = document.getElementById('messages')
     messagesDiv.innerHTML = ''
     
-    // Load local messages first
-    console.log('[ROOM] Loading local messages...')
-    const localMessages = await api.getMessagesForRoom(roomId)
+    // Load initial batch of messages (last 50)
+    console.log('[ROOM] Loading initial messages...')
+    const result = await api.getMessagesForRoomPaginated(roomId, state.pagination.pageSize, 0)
     
-    if (localMessages && localMessages.length > 0) {
-      console.log('[ROOM] Found', localMessages.length, 'local messages')
-      // Display local messages
-      for (const msg of localMessages) {
+    state.pagination.hasMore.set(roomId, result.hasMore)
+    
+    if (result.messages && result.messages.length > 0) {
+      console.log(`[ROOM] Loaded ${result.messages.length}/${result.total} messages`)
+      
+      // Show "Load more" button if there are older messages
+      if (result.hasMore) {
+        showLoadMoreButton()
+      }
+      
+      // Display messages
+      for (const msg of result.messages) {
         await displayStoredMessage(msg)
       }
     }
     
-    // Fetch new messages from server (incremental update)
-    const lastMessageId = await api.getLastMessageId(roomId)
-    console.log('[ROOM] Fetching updates after message ID:', lastMessageId)
-    await api.ws.fetchMessages(roomId, lastMessageId)
+    // Setup scroll listener for loading more messages
+    setupScrollListener()
     
     console.log('[ROOM] Selected room complete:', roomId)
   } catch (error) {
     console.error('[ROOM] Error selecting room:', error)
     alert('Failed to select room: ' + error)
+  }
+}
+
+/**
+ * Show \"Load more\" indicator at top of messages
+ */
+function showLoadMoreButton() {
+  const messagesDiv = document.getElementById('messages')
+  
+  // Remove existing button if any
+  const existing = messagesDiv.querySelector('.load-more-btn')
+  if (existing) existing.remove()
+  
+  const loadMoreBtn = document.createElement('div')
+  loadMoreBtn.className = 'load-more-btn'
+  loadMoreBtn.innerHTML = '<button class="secondary" onclick="loadMoreMessages()">▲ Load older messages</button>'
+  
+  messagesDiv.insertBefore(loadMoreBtn, messagesDiv.firstChild)
+}
+
+/**
+ * Load more messages (older history)
+ */
+async function loadMoreMessages() {
+  if (!state.currentRoom || state.pagination.isLoading) {
+    return
+  }
+  
+  const hasMore = state.pagination.hasMore.get(state.currentRoom)
+  if (!hasMore) {
+    return
+  }
+  
+  try {
+    state.pagination.isLoading = true
+    
+    // Update button to show loading
+    const btn = document.querySelector('.load-more-btn button')
+    if (btn) {
+      btn.disabled = true
+      btn.textContent = '⏳ Loading...'
+    }
+    
+    // Calculate offset (number of messages already loaded)
+    const messagesDiv = document.getElementById('messages')
+    const currentCount = messagesDiv.querySelectorAll('.message').length
+    
+    console.log('[PAGINATION] Loading more messages, current count:', currentCount)
+    
+    // Load next batch
+    const result = await api.getMessagesForRoomPaginated(
+      state.currentRoom,
+      state.pagination.pageSize,
+      currentCount
+    )
+    
+    state.pagination.hasMore.set(state.currentRoom, result.hasMore)
+    
+    if (result.messages && result.messages.length > 0) {
+      console.log(`[PAGINATION] Loaded ${result.messages.length} more messages`)
+      
+      // Save current scroll position
+      const messagesDiv = document.getElementById('messages')
+      const oldScrollHeight = messagesDiv.scrollHeight
+      
+      // Display new messages at the top (before existing ones)
+      for (const msg of result.messages) {
+        await displayStoredMessage(msg, true) // prepend mode
+      }
+      
+      // Restore scroll position (compensate for new messages)
+      const newScrollHeight = messagesDiv.scrollHeight
+      messagesDiv.scrollTop = newScrollHeight - oldScrollHeight
+      
+      // Update or remove \"Load more\" button
+      if (result.hasMore) {
+        const btn = document.querySelector('.load-more-btn button')
+        if (btn) {
+          btn.disabled = false
+          btn.textContent = '▲ Load older messages'
+        }
+      } else {
+        const loadMoreBtn = document.querySelector('.load-more-btn')
+        if (loadMoreBtn) loadMoreBtn.remove()
+      }
+    }
+  } catch (error) {
+    console.error('[PAGINATION] Error loading more messages:', error)
+    alert('Failed to load more messages')
+  } finally {
+    state.pagination.isLoading = false
+  }
+}
+
+/**
+ * Setup scroll listener for auto-loading on scroll to top
+ */
+function setupScrollListener() {
+  const messagesDiv = document.getElementById('messages')
+  
+  // Remove old listener if exists
+  messagesDiv.onscroll = null
+  
+  messagesDiv.onscroll = () => {
+    // If scrolled near the top (within 100px), load more
+    if (messagesDiv.scrollTop < 100 && !state.pagination.isLoading) {
+      const hasMore = state.pagination.hasMore.get(state.currentRoom)
+      if (hasMore) {
+        loadMoreMessages()
+      }
+    }
   }
 }
 
@@ -896,7 +1490,7 @@ async function createDMRoom() {
     if (result.roomId) {
       alert(`DM created successfully with ${username}!`)
       hideCreateRoomDialog()
-      await loadRooms()
+      // Don't call loadRooms here - WebSocket room_created notification will handle it
       await selectRoom(result.roomId)
     }
   } catch (error) {
@@ -937,8 +1531,9 @@ async function createGroupRoom() {
     if (result.roomId) {
       alert(`Group "${roomName}" created successfully with ${usernames.length} member(s)!`)
       hideCreateRoomDialog()
-      await loadRooms()
-      await selectRoom(result.roomId)
+      // Don't call loadRooms here - WebSocket room_created notification will handle it
+      // Just wait a moment for the notification then select the room
+      setTimeout(() => selectRoom(result.roomId), 500)
     }
   } catch (error) {
     alert('Failed to create group: ' + error)
@@ -951,6 +1546,303 @@ async function createGroupRoom() {
 async function createDM() {
   showCreateRoomDialog()
   switchRoomTab('dm')
+}
+
+/**
+ * Leave current group
+ */
+async function leaveCurrentGroup() {
+  if (!state.currentRoom) {
+    return
+  }
+
+  try {
+    // Get room info to check if user is creator
+    const roomInfo = await api.getGroupInfo(state.currentRoom)
+    
+    if (!roomInfo.success) {
+      // If unable to get room info, try to leave directly
+      if (confirm('Are you sure you want to leave this group?')) {
+        const result = await api.leaveGroup(state.currentRoom)
+        if (result.success) {
+          await handleSuccessfulLeave()
+        } else {
+          alert('Failed to leave group: ' + result.error)
+        }
+      }
+      return
+    }
+    
+    const isCreator = roomInfo.room.creator === state.currentUser?.userId
+    
+    if (isCreator && roomInfo.room.participants && roomInfo.room.participants.length > 1) {
+      // Creator needs to transfer admin
+      showTransferAdminDialog(roomInfo.room.participants)
+    } else {
+      // Not creator or only member, leave directly
+      if (confirm('Are you sure you want to leave this group?')) {
+        const result = await api.leaveGroup(state.currentRoom)
+        if (result.success) {
+          await handleSuccessfulLeave()
+        } else {
+          alert('Failed to leave group: ' + result.error)
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[ROOM] Error leaving group:', error)
+    alert('Error leaving group: ' + error)
+  }
+}
+
+async function handleSuccessfulLeave() {
+  alert('You have left the group. It has been moved to archived.')
+  
+  const leftRoomId = state.currentRoom
+  
+  // Clear current room state
+  state.currentRoom = null
+  
+  // Reload rooms list (room will now appear in archived)
+  await loadRooms()
+  
+  // Show welcome message
+  const messagesDiv = document.getElementById('messages')
+  messagesDiv.innerHTML = `
+    <div class="welcome-message">
+      <p>🔒 End-to-end encrypted chat</p>
+      <p>Select a room to start messaging</p>
+    </div>
+  `
+  
+  // Show input bar again (was hidden for archived view)
+  const inputBar = document.querySelector('.input-bar')
+  if (inputBar) {
+    inputBar.style.display = 'flex'
+  }
+  
+  // Hide leave and add members buttons
+  const leaveBtn = document.getElementById('leaveGroupBtn')
+  if (leaveBtn) {
+    leaveBtn.style.display = 'none'
+  }
+  
+  const addMembersBtn = document.getElementById('addMembersBtn')
+  if (addMembersBtn) {
+    addMembersBtn.style.display = 'none'
+  }
+  
+  const groupInfoBtn = document.getElementById('groupInfoBtn')
+  if (groupInfoBtn) {
+    groupInfoBtn.style.display = 'none'
+  }
+  
+  // Update header
+  document.querySelector('.chat-header h4').textContent = '# general'
+}
+
+// ==================== ADD MEMBERS ====================
+
+async function showAddMembersDialog() {
+  const dialog = document.getElementById('addMembersDialog')
+  const input = document.getElementById('addMembersInput')
+  input.value = ''
+  dialog.style.display = 'flex'
+}
+
+function closeAddMembersDialog() {
+  const dialog = document.getElementById('addMembersDialog')
+  dialog.style.display = 'none'
+}
+
+async function confirmAddMembers() {
+  const input = document.getElementById('addMembersInput')
+  const usernamesRaw = input.value.trim()
+  
+  if (!usernamesRaw) {
+    alert('Please enter at least one username')
+    return
+  }
+  
+  const usernames = usernamesRaw.split(',').map(u => u.trim()).filter(u => u)
+  
+  if (usernames.length === 0) {
+    alert('Please enter valid usernames')
+    return
+  }
+  
+  if (!state.currentRoom) {
+    alert('No room selected')
+    return
+  }
+  
+  try {
+    const result = await api.addMembersToGroup(state.currentRoom, usernames)
+    
+    if (result.success) {
+      alert(`Successfully added ${usernames.length} member(s) to the group`)
+      closeAddMembersDialog()
+    } else {
+      alert('Failed to add members: ' + result.error)
+    }
+  } catch (error) {
+    console.error('[ROOM] Error adding members:', error)
+    alert('Error adding members: ' + error)
+  }
+}
+
+// ==================== TRANSFER ADMIN ====================
+
+function showTransferAdminDialog(participants) {
+  const dialog = document.getElementById('transferAdminDialog')
+  const select = document.getElementById('newAdminSelect')
+  
+  // Clear existing options
+  select.innerHTML = ''
+  
+  // Filter out current user and populate options
+  const otherMembers = participants.filter(p => p.userId !== state.currentUser?.userId)
+  
+  if (otherMembers.length === 0) {
+    alert('You are the only member. Cannot leave.')
+    return
+  }
+  
+  otherMembers.forEach(member => {
+    const option = document.createElement('option')
+    option.value = member.userId
+    option.textContent = member.username || member.userId
+    select.appendChild(option)
+  })
+  
+  dialog.style.display = 'flex'
+}
+
+function closeTransferAdminDialog() {
+  const dialog = document.getElementById('transferAdminDialog')
+  dialog.style.display = 'none'
+}
+
+async function confirmTransferAndLeave() {
+  const select = document.getElementById('newAdminSelect')
+  const newAdminUserId = select.value
+  
+  if (!newAdminUserId) {
+    alert('Please select a new admin')
+    return
+  }
+  
+  if (!state.currentRoom) {
+    alert('No room selected')
+    return
+  }
+  
+  try {
+    // Leave with admin transfer
+    const result = await api.leaveGroup(state.currentRoom, newAdminUserId)
+    
+    if (result.success) {
+      closeTransferAdminDialog()
+      await handleSuccessfulLeave()
+    } else {
+      alert('Failed to transfer admin and leave: ' + result.error)
+    }
+  } catch (error) {
+    console.error('[ROOM] Error transferring admin:', error)
+    alert('Error transferring admin: ' + error)
+  }
+}
+
+// ==================== GROUP INFO ====================
+
+async function showGroupInfo() {
+  if (!state.currentRoom) {
+    alert('No room selected')
+    return
+  }
+  
+  try {
+    const roomInfo = await api.getGroupInfo(state.currentRoom)
+    
+    if (!roomInfo.success) {
+      alert('Failed to load group info: ' + roomInfo.error)
+      return
+    }
+    
+    const room = roomInfo.room
+    
+    // Populate dialog
+    document.getElementById('groupInfoName').textContent = room.name || 'Group'
+    document.getElementById('groupInfoId').textContent = room.id
+    
+    // Find creator username
+    const creator = room.participants.find(p => p.userId === room.creator)
+    document.getElementById('groupInfoCreator').textContent = 
+      creator ? `${creator.username} (${room.creator})` : room.creator
+    
+    // Format created date
+    const createdDate = new Date(roomInfo.room.createdAt || Date.now())
+    document.getElementById('groupInfoCreatedAt').textContent = createdDate.toLocaleString()
+    
+    // Populate members list
+    document.getElementById('groupInfoMemberCount').textContent = room.participants.length
+    const membersList = document.getElementById('groupInfoMembers')
+    membersList.innerHTML = ''
+    
+    room.participants.forEach(member => {
+      const li = document.createElement('li')
+      const isCreator = member.userId === room.creator
+      const isYou = member.userId === state.currentUser?.userId
+      
+      let badges = ''
+      if (isCreator) badges += '<span class="creator-badge">👑 Creator</span>'
+      if (isYou) badges += '<span class="you-badge">You</span>'
+      
+      li.innerHTML = `
+        <span class="member-name">${member.username}</span>
+        ${badges}
+        <span class="member-id">${member.userId}</span>
+      `
+      membersList.appendChild(li)
+    })
+    
+    // Show dialog
+    document.getElementById('groupInfoDialog').style.display = 'flex'
+    
+  } catch (error) {
+    console.error('[ROOM] Error showing group info:', error)
+    alert('Error loading group info: ' + error)
+  }
+}
+
+function closeGroupInfo() {
+  document.getElementById('groupInfoDialog').style.display = 'none'
+}
+
+// ==================== UPDATE ADMIN BUTTONS ====================
+
+async function updateAdminButtons(roomId) {
+  if (!roomId) return
+  
+  try {
+    // Get room info
+    const roomInfo = await api.getGroupInfo(roomId)
+    
+    if (!roomInfo.success) {
+      return
+    }
+    
+    const isCreator = roomInfo.room.creator === state.currentUser?.userId
+    const isGroupChat = roomInfo.room.name && !isDMRoom(roomInfo.room.name)
+    
+    // Show Add Members button only for group creators
+    const addMembersBtn = document.getElementById('addMembersBtn')
+    if (addMembersBtn) {
+      addMembersBtn.style.display = (isGroupChat && isCreator) ? 'block' : 'none'
+    }
+  } catch (error) {
+    console.error('[ROOM] Error checking admin status:', error)
+  }
 }
 
 // ==================== EVENT LISTENERS ====================
@@ -981,4 +1873,14 @@ window.switchRoomTab = switchRoomTab
 window.createDMRoom = createDMRoom
 window.createGroupRoom = createGroupRoom
 window.selectRoom = selectRoom
+window.loadMoreMessages = loadMoreMessages
+window.leaveCurrentGroup = leaveCurrentGroup
+window.showAddMembersDialog = showAddMembersDialog
+window.closeAddMembersDialog = closeAddMembersDialog
+window.confirmAddMembers = confirmAddMembers
+window.showTransferAdminDialog = showTransferAdminDialog
+window.closeTransferAdminDialog = closeTransferAdminDialog
+window.confirmTransferAndLeave = confirmTransferAndLeave
+window.showGroupInfo = showGroupInfo
+window.closeGroupInfo = closeGroupInfo
   

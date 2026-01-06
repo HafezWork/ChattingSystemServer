@@ -25,6 +25,7 @@ db.serialize(() => {
       peer_uuid TEXT NOT NULL,
       peer_pub_shared BLOB,
       personal_pub_shared BLOB,
+      archived INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `)

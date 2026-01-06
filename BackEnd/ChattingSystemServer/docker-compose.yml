@@ -39,6 +39,7 @@ services:
         Server=mysql;Port=3306;Database=ChatDb;User=chatadmin;Password=ChatAdminPass123!
     ports:
       - "5000:8080"
+      - "8181:8181"
     networks:
       - chat-network
 

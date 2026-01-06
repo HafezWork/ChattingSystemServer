@@ -542,6 +542,175 @@ ipcMain.handle("room:createGroup", async (_, roomName, peerUsernames) => {
   }
 })
 
+/* ================= ADD MEMBERS TO GROUP ================= */
+
+ipcMain.handle("room:addMembers", async (_, roomId, usernames) => {
+  try {
+    console.log("[ROOM] Adding members to group:", roomId, "users:", usernames)
+    
+    if (!currentJWT || !currentUserUid || !currentUserKeyPair) {
+      throw new Error("Not authenticated or keypair not loaded")
+    }
+
+    if (!Array.isArray(usernames) || usernames.length === 0) {
+      throw new Error("At least one username is required")
+    }
+
+    // 1. Get current room key
+    const roomKeyResult = await new Promise((resolve, reject) => {
+      db.get(
+        "SELECT encrypted_key FROM room_keys WHERE room_id = ? AND active = 1",
+        [roomId],
+        (err, row) => {
+          if (err) return reject(err)
+          if (!row) return reject(new Error("Room key not found"))
+          resolve(row.encrypted_key)
+        }
+      )
+    })
+
+    // 2. Decrypt room key
+    const decryptRoomKey = require("./crypto/decryptRoomKey")
+    const roomKey = decryptRoomKey(
+      roomKeyResult.toString("base64"),
+      currentUserKeyPair.privateKey
+    )
+
+    // 3. Get new members' public keys
+    const newMembers = []
+    for (const username of usernames) {
+      const peerRes = await fetch(`${BACKEND_URL}/Users`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + currentJWT
+        },
+        body: JSON.stringify({ username })
+      })
+      
+      if (!peerRes.ok) {
+        console.error("[ROOM] Failed to fetch user", username)
+        continue
+      }
+      
+      const peer = await peerRes.json()
+      if (peer && peer.userId) {
+        newMembers.push(peer)
+      }
+    }
+
+    if (newMembers.length === 0) {
+      throw new Error("No valid users found")
+    }
+
+    // 4. Encrypt room key for each new member
+    const encryptedKeys = newMembers.map(member => ({
+      userId: member.userId,
+      key: encryptRoomKey(roomKey, member.publicKey).toString("base64")
+    }))
+
+    // 5. Send to backend
+    const res = await fetch(`${BACKEND_URL}/rooms/${roomId}/members`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + currentJWT
+      },
+      body: JSON.stringify({
+        Users: newMembers.map(m => m.userId),
+        EncryptionKeys: encryptedKeys
+      })
+    })
+
+    if (!res.ok) {
+      const error = await res.text()
+      throw new Error(error)
+    }
+
+    const result = await res.json()
+    console.log("[ROOM] Members added successfully")
+    return { success: true, ...result }
+
+  } catch (error) {
+    console.error("[ROOM] Error adding members:", error)
+    return { success: false, error: error.message }
+  }
+})
+
+/* ================= TRANSFER ADMIN ================= */
+
+ipcMain.handle("room:transferAdmin", async (_, roomId, newAdminUserId) => {
+  try {
+    if (!currentJWT) {
+      throw new Error("Not authenticated")
+    }
+
+    const res = await fetch(`${BACKEND_URL}/rooms/${roomId}/transfer-admin`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + currentJWT
+      },
+      body: JSON.stringify({ newAdminUserId })
+    })
+
+    if (!res.ok) {
+      const error = await res.text()
+      throw new Error(error)
+    }
+
+    console.log("[ROOM] Admin transferred to:", newAdminUserId)
+    return { success: true }
+
+  } catch (error) {
+    console.error("[ROOM] Error transferring admin:", error)
+    return { success: false, error: error.message }
+  }
+})
+
+/* ================= GET GROUP INFO ================= */
+
+ipcMain.handle("room:getInfo", async (_, roomId) => {
+  try {
+    if (!currentJWT) {
+      throw new Error("Not authenticated")
+    }
+
+    const res = await fetch(`${BACKEND_URL}/rooms/${roomId}`, {
+      method: "GET",
+      headers: {
+        "Authorization": "Bearer " + currentJWT
+      }
+    })
+
+    if (!res.ok) {
+      const error = await res.text()
+      throw new Error(error)
+    }
+
+    const roomInfo = await res.json()
+    console.log("[ROOM] Room info:", roomInfo)
+    
+    return {
+      success: true,
+      room: {
+        id: roomInfo.id || roomInfo.Id,
+        name: roomInfo.name || roomInfo.Name,
+        creator: roomInfo.createdBy || roomInfo.CreatedBy,
+        createdAt: roomInfo.createdAt || roomInfo.CreatedAt,
+        participants: (roomInfo.users || roomInfo.Users || []).map(u => ({
+          userId: u.userId || u.UserId || u.id || u.Id,
+          username: u.username || u.Username || u.UserName || u.userName
+        }))
+      }
+    }
+
+  } catch (error) {
+    console.error("[ROOM] Error getting room info:", error)
+    return { success: false, error: error.message }
+  }
+})
+
 /* ================= ROOM LISTING ================= */
 
 ipcMain.handle("room:list", async () => {
@@ -566,6 +735,7 @@ ipcMain.handle("room:list", async () => {
 
     if (!res.ok) {
       console.log("[ROOM] Backend fetch failed, using local rooms")
+      console.log(res)
       // Fallback to local database if backend fails
       return new Promise((resolve, reject) => {
         db.all("SELECT room_id, peer_uuid FROM rooms", (err, rows) => {
@@ -603,7 +773,7 @@ ipcMain.handle("room:list", async () => {
         
         // Determine if it's a group chat (more than 2 users)
         const userCount = (room.users || room.Users || []).length
-        const isGroupChat = userCount > 2
+        const isGroupChat = !(room.name === 73)
         
         return {
           id: roomId,
@@ -736,6 +906,80 @@ ipcMain.handle("room:getKey", async (_, roomId) => {
   }
 })
 
+// Leave a group
+ipcMain.handle("room:leave", async (_, roomId, newAdminUserId) => {
+  try {
+    if (!currentJWT || !currentUserUid) {
+      throw new Error("Not authenticated")
+    }
+
+    // If newAdminUserId is provided, transfer admin first
+    if (newAdminUserId) {
+      const transferRes = await fetch(`${BACKEND_URL}/rooms/${roomId}/transfer-admin`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + currentJWT
+        },
+        body: JSON.stringify({ newAdminUserId })
+      })
+
+      if (!transferRes.ok) {
+        const error = await transferRes.text()
+        throw new Error(`Failed to transfer admin: ${error}`)
+      }
+      console.log("[ROOM] Admin transferred before leaving")
+    }
+
+    // Now leave the group
+    const response = await fetch(`${BACKEND_URL}/rooms/${roomId}/leave`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${currentJWT}`,
+        "Content-Type": "application/json"
+      }
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`HTTP ${response.status}: ${errorText}`)
+    }
+
+    // Mark room as archived in local database
+    await new Promise((resolve, reject) => {
+      db.run(
+        "UPDATE rooms SET archived = 1 WHERE room_id = ?",
+        [roomId],
+        err => (err ? reject(err) : resolve())
+      )
+    })
+
+    console.log("[ROOM] Left and archived group:", roomId)
+    return { success: true }
+  } catch (error) {
+    console.error("[ROOM] Error leaving group:", error)
+    return { success: false, error: error.message }
+  }
+})
+
+// Archive/unarchive a room
+ipcMain.handle("room:setArchived", async (_, roomId, archived) => {
+  try {
+    await new Promise((resolve, reject) => {
+      db.run(
+        "UPDATE rooms SET archived = ? WHERE room_id = ?",
+        [archived ? 1 : 0, roomId],
+        err => (err ? reject(err) : resolve())
+      )
+    })
+    console.log(`[ROOM] ${archived ? 'Archived' : 'Unarchived'} room:`, roomId)
+    return { success: true }
+  } catch (error) {
+    console.error("[ROOM] Error updating archived status:", error)
+    return { success: false, error: error.message }
+  }
+})
+
 /* ================= MESSAGE STORAGE ================= */
 
 // Store encrypted message to local DB
@@ -758,6 +1002,26 @@ ipcMain.handle("message:store", async (event, { messageId, roomId, senderId, cip
   }
 })
 
+// Update message ID (replace temp ID with server ID)
+ipcMain.handle("message:updateId", async (event, { roomId, ciphertext, newMessageId }) => {
+  try {
+    await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE messages 
+         SET message_id = ? 
+         WHERE room_id = ? AND content = ? AND message_id LIKE 'temp-%'`,
+        [newMessageId, roomId, ciphertext],
+        err => err ? reject(err) : resolve()
+      )
+    })
+    console.log("[MESSAGE] Updated temp ID to:", newMessageId)
+    return { success: true }
+  } catch (error) {
+    console.error("[MESSAGE] Error updating ID:", error)
+    return { success: false, error: error.message }
+  }
+})
+
 // Get all encrypted messages for a room
 ipcMain.handle("message:getForRoom", async (event, roomId) => {
   try {
@@ -776,6 +1040,46 @@ ipcMain.handle("message:getForRoom", async (event, roomId) => {
   } catch (error) {
     console.error("[MESSAGE] Error loading:", error)
     return []
+  }
+})
+
+// Get paginated messages for a room (latest first)
+ipcMain.handle("message:getForRoomPaginated", async (event, { roomId, limit, offset }) => {
+  try {
+    // Get total count first
+    const count = await new Promise((resolve, reject) => {
+      db.get(
+        `SELECT COUNT(*) as total FROM messages WHERE room_id = ?`,
+        [roomId],
+        (err, row) => err ? reject(err) : resolve(row?.total || 0)
+      )
+    })
+
+    // Get messages in reverse order (newest first) with limit/offset
+    const messages = await new Promise((resolve, reject) => {
+      db.all(
+        `SELECT message_id, room_id, sender_uuid, content, iv, created_at 
+         FROM messages 
+         WHERE room_id = ? 
+         ORDER BY created_at DESC 
+         LIMIT ? OFFSET ?`,
+        [roomId, limit, offset],
+        (err, rows) => err ? reject(err) : resolve(rows || [])
+      )
+    })
+
+    // Reverse to get chronological order (oldest to newest)
+    messages.reverse()
+
+    console.log(`[MESSAGE] Loaded ${messages.length}/${count} messages (offset: ${offset})` )
+    return {
+      messages,
+      total: count,
+      hasMore: offset + messages.length < count
+    }
+  } catch (error) {
+    console.error("[MESSAGE] Error loading paginated:", error)
+    return { messages: [], total: 0, hasMore: false }
   }
 })
 

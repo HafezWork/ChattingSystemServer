@@ -3,6 +3,7 @@ using ChatServerMVC.Domain.Entities;
 using ChatServerMVC.Models;
 using ChatServerMVC.services.DTOs.Room;
 using ChatServerMVC.services.Interfaces;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChatServerMVC.services.Services
@@ -10,11 +11,13 @@ namespace ChatServerMVC.services.Services
     public class RoomService : IRoomService
     {
         private readonly IDbContextFactory<DataContext> _dbFactory;
+        private readonly WebSocketHandler _webSocketHandler;
 
 
-        public RoomService(IDbContextFactory<DataContext> dbFactory)
+        public RoomService(IDbContextFactory<DataContext> dbFactory, WebSocketHandler webSocketHandler)
         {
             _dbFactory = dbFactory;
+            _webSocketHandler = webSocketHandler;
         }
         public async Task<Guid> CreateRoom(string name, Guid creator, List<Guid> users, List<(Guid, byte[])> encryptionKeys)
         {
@@ -54,6 +57,18 @@ namespace ChatServerMVC.services.Services
             }
             ));
             _db.SaveChanges();
+            var notification = new
+            {
+                Type = "room_created",
+                RoomId = room.Id,
+                Name = name,
+                CreatedBy = creator
+            };
+            foreach (var userId in userIds)
+            {
+                await _webSocketHandler.SendToUser(userId, notification);
+            }
+
             return room.Id;
         }
 
@@ -77,13 +92,13 @@ namespace ChatServerMVC.services.Services
             var secondMember = new RoomMemberModel() { UserId = secUser.Id };
 
             var users = new List<RoomMemberModel>() { firstMember, secondMember };
-
+            string name = $"{firstUser}-{secUser.Id}";
             var id = Guid.NewGuid();
             users[0].RoomId = id;
             users[1].RoomId = id;
             _db.Rooms.Add(new RoomModel
             {
-                Name = secondUser,
+                Name = name,
                 Id = id,
                 CreatedAt = DateTime.Now,
                 CreatedBy = firstUser,
@@ -99,11 +114,20 @@ namespace ChatServerMVC.services.Services
             }
             ));
             _db.SaveChanges();
+            var notification = new
+            {
+                Type = "room_created",
+                RoomId = id,
+                Name = name,
+                CreatedBy = firstUser
+            };
+            await _webSocketHandler.SendToUser(secUser.Id, notification);
+            await _webSocketHandler.SendToUser(firstUser, notification);
             return id;
         }
 
         public async Task<List<GetRoomsResponse>> GetRooms(Guid User)
-    {
+        {
             await using var _db = await _dbFactory.CreateDbContextAsync();
             var rooms = await _db.Rooms
                     .Include(r => r.Users)
@@ -126,7 +150,7 @@ namespace ChatServerMVC.services.Services
                 LastMessageTime = room.Messages
                     .OrderByDescending(m => m.CreatedAt)
                     .FirstOrDefault()?.CreatedAt,
-                UnreadCount = 0 
+                UnreadCount = 0
             }).ToList();
 
         }
@@ -137,14 +161,82 @@ namespace ChatServerMVC.services.Services
             .Where(r => r.RoomId == RoomId).Select(r => r.UserId).ToListAsync();
             return Members;
         }
-        public async Task<RoomModel> GetRoomById(Guid RoomId, Guid UserId)
+        public async Task<GetRoomInfoResponse?> GetRoomById(Guid RoomId, Guid UserId)
         {
             await using var _db = await _dbFactory.CreateDbContextAsync();
-            var Room = await _db.Rooms
-            .Where(r => r.Id == RoomId).FirstAsync();
-            if (Room == null)
-                return new RoomModel { }; 
-            return Room;
+            var room = await _db.Rooms
+                .Include(r => r.Users)
+                    .ThenInclude(rm => rm.User)
+                .Where(r => r.Id == RoomId && r.Users.Any(u => u.UserId == UserId))
+                .FirstOrDefaultAsync();
+
+            if (room == null)
+                return null;
+
+            return new GetRoomInfoResponse
+            {
+                Id = room.Id,
+                Name = room.Name,
+                CreatedBy = room.CreatedBy,
+                CreatedAt = room.CreatedAt,
+                Users = room.Users.Select(u => new RoomUserInfo
+                {
+                    UserId = u.UserId,
+                    Username = u.User.UserName
+                }).ToList()
+            };
+        }
+        public async Task AddtoRoom(Guid creator, Guid roomId, List<Guid> users, List<(Guid, byte[])> encryptionKeys)
+        {
+            await using var _db = await _dbFactory.CreateDbContextAsync();
+
+            var found = await _db.Rooms.AnyAsync(r => r.Id == roomId);
+            if (!found)
+                throw new Exception("Room not found");
+            var room = await _db.Rooms.FirstOrDefaultAsync(r => r.Id == roomId);
+
+            var authorized = await _db.Rooms.AnyAsync(r => r.Id == roomId && r.CreatedBy == creator);
+            if (!authorized)
+                throw new Exception("You are not authorized to add users to this room");
+
+            List<Guid> userIds = new List<Guid>();
+            foreach (var user in users)
+            {
+                var temp = await _db.Users.FirstOrDefaultAsync(u => u.Id == user);
+                if (temp != null)
+                {
+                    userIds.Add(temp.Id);
+                }
+            }
+
+
+            _db.RoomMembers.AddRange(userIds.Select(uid => new RoomMemberModel
+            {
+                RoomId = roomId,
+                UserId = uid,
+            }));
+
+            _db.EncryptionKeys.AddRange(encryptionKeys.Select(uid => new EncryptionKeyModel
+            {
+                Key = uid.Item2,
+                RoomId = roomId,
+                UserId = uid.Item1
+            }
+            ));
+            _db.SaveChanges();
+            var notification = new
+            {
+                Type = "room_created",
+                RoomId = roomId,
+                Name = room.Name,
+                CreatedBy = creator
+            };
+            foreach (var userId in userIds)
+            {
+                await _webSocketHandler.SendToUser(userId, notification);
+            }
+            return;
         }
     }
 }
+

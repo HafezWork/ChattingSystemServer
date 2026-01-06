@@ -123,7 +123,7 @@ class WebSocketManager {
   /**
    * Send a message through WebSocket
    */
-  async sendMessage(roomId, ciphertext, nonce, senderId, keyVersion = 1) {
+  async sendMessage(roomId, ciphertext, nonce, senderId, keyVersion = 1, timestamp = null) {
     // Create unique message ID based on content hash
     const messageId = `${roomId}-${ciphertext.substring(0, 20)}-${nonce.substring(0, 20)}`
 
@@ -139,7 +139,8 @@ class WebSocketManager {
       RoomId: roomId,
       Ciphertext: ciphertext,
       Nonce: nonce,
-      KeyVersion: keyVersion
+      KeyVersion: keyVersion,
+      Timestamp: timestamp || new Date().toISOString()
     }
 
     if (!this.connected) {
@@ -157,11 +158,11 @@ class WebSocketManager {
       // Clear sent message ID after 30 seconds
       setTimeout(() => this.sentMessageIds.delete(messageId), 30000)
 
-      return true
+      return { success: true }
     } catch (error) {
       console.error("[WS] Error sending message:", error)
       this.pendingMessages.push({ envelope, messageId })
-      return false
+      return { success: false, error: error.message }
     }
   }
 
@@ -196,12 +197,27 @@ class WebSocketManager {
    */
   handleMessage(data) {
     try {
-      const envelope = JSON.parse(data)
+      // Handle double-stringified JSON (if server sends stringified string)
+      let parsed = data
+      if (typeof data === 'string') {
+        try {
+          parsed = JSON.parse(data)
+          // If it's still a string after first parse, parse again
+          if (typeof parsed === 'string') {
+            parsed = JSON.parse(parsed)
+          }
+        } catch (e) {
+          console.error('[WS] Error parsing message:', e)
+          return
+        }
+      }
+      
+      console.log('[WS] Parsed envelope:', parsed)
 
       // Emit to all registered handlers
-      this.emit("message", envelope)
+      this.emit("message", parsed)
     } catch (error) {
-      console.error("[WS] Error parsing message:", error)
+      console.error("[WS] Error handling message:", error)
     }
   }
 
@@ -275,9 +291,9 @@ function setupWebSocketIPC() {
     return { success: true }
   })
 
-  ipcMain.handle("ws:sendMessage", async (_, roomId, ciphertext, nonce, senderId, keyVersion) => {
-    const success = await wsManager.sendMessage(roomId, ciphertext, nonce, senderId, keyVersion)
-    return { success }
+  ipcMain.handle("ws:sendMessage", async (_, roomId, ciphertext, nonce, senderId, keyVersion, timestamp) => {
+    const success = await wsManager.sendMessage(roomId, ciphertext, nonce, senderId, keyVersion, timestamp)
+    return success
   })
 
   ipcMain.handle("ws:fetchMessages", async (_, roomId, afterMessageId) => {

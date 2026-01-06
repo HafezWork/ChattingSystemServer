@@ -9,6 +9,8 @@ namespace ChatServerMVC.services.Interfaces
         Task<Guid> CreateDM(Guid firstUser, string secondUser, List<(Guid, byte[])> encryptionKeys);
         Task<List<GetRoomsResponse>> GetRooms(Guid User);
         Task<List<Guid>> GetRoomMembers(Guid RoomId);
-        Task<RoomModel> GetRoomById(Guid RoomId, Guid UserId);
+        Task<GetRoomInfoResponse?> GetRoomById(Guid RoomId, Guid UserId);
+        Task AddtoRoom(Guid creator, Guid roomId, List<Guid> users, List<(Guid, byte[])> encryptionKeys);
+
     }
 }

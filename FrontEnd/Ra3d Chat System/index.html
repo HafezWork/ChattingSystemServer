@@ -73,9 +73,7 @@
       <!-- SERVERS -->
       <div class="servers">
         <div class="server active">💬</div>
-        <div class="server">🔐</div>
-        <div class="server">👥</div>
-        <div class="server add">+</div>
+        <button class="logout-btn-server" onclick="doLogout()" title="Logout">🚪</button>
       </div>
 
       <!-- CHANNELS -->
@@ -85,6 +83,10 @@
           <span>🔒 E2EE</span>
         </div>
 
+        <div class="user-profile">
+          <span class="profile-greeting">Hi, <span id="currentUsername">User</span></span>
+        </div>
+
         <div class="rooms-header">
           <h4>Rooms</h4>
           <button class="add-room-btn" onclick="showCreateRoomDialog()">+</button>
@@ -92,13 +94,25 @@
         <div id="roomsList" class="rooms-list">
           <!-- Rooms will be dynamically added here -->
         </div>
+
+        <div class="rooms-header archived-header">
+          <h4>📦 Archived</h4>
+        </div>
+        <div id="archivedRoomsList" class="rooms-list archived-list">
+          <!-- Archived rooms will be dynamically added here -->
+        </div>
       </div>
 
       <!-- CHAT -->
       <div class="chat">
         <div class="chat-header">
           <h4># general</h4>
-          <span>🔐 End-to-End Encrypted</span>
+          <div class="header-actions">
+            <button id="groupInfoBtn" class="info-btn" onclick="showGroupInfo()" style="display: none;" title="Group Info">ℹ️</button>
+            <button id="addMembersBtn" class="add-members-btn" onclick="showAddMembersDialog()" style="display: none;">+ Add Members</button>
+            <button id="leaveGroupBtn" class="leave-btn" onclick="leaveCurrentGroup()" style="display: none;">Leave Group</button>
+            <span class="encryption-badge">🔐 End-to-End Encrypted</span>
+          </div>
         </div>
 
         <div class="messages" id="messages">
@@ -144,6 +158,62 @@
           <button class="secondary" onclick="hideCreateRoomDialog()">Cancel</button>
           <button class="primary" onclick="createGroupRoom()">Create Group</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= GROUP INFO DIALOG ================= -->
+  <div id="groupInfoDialog" class="dialog-overlay" style="display: none;">
+    <div class="dialog-box info-dialog">
+      <h3 id="groupInfoName">Group Name</h3>
+      <div class="info-section">
+        <label>Group ID:</label>
+        <span id="groupInfoId" class="info-value"></span>
+      </div>
+      <div class="info-section">
+        <label>Created By:</label>
+        <span id="groupInfoCreator" class="info-value"></span>
+      </div>
+      <div class="info-section">
+        <label>Created At:</label>
+        <span id="groupInfoCreatedAt" class="info-value"></span>
+      </div>
+      <div class="info-section">
+        <label>Members (<span id="groupInfoMemberCount">0</span>):</label>
+        <ul id="groupInfoMembers" class="members-list">
+          <!-- Members will be populated dynamically -->
+        </ul>
+      </div>
+      <div class="dialog-actions">
+        <button onclick="closeGroupInfo()" class="btn-primary">Close</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- ================= ADD MEMBERS DIALOG ================= -->
+  <div id="addMembersDialog" class="dialog-overlay" style="display: none;">
+    <div class="dialog-box">
+      <h3>Add Members to Group</h3>
+      <p>Enter usernames to add (comma-separated):</p>
+      <input id="addMembersInput" type="text" placeholder="user1, user2, user3" />
+      <div class="dialog-actions">
+        <button onclick="confirmAddMembers()" class="btn-primary">Add</button>
+        <button onclick="closeAddMembersDialog()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= TRANSFER ADMIN DIALOG ================= -->
+  <div id="transferAdminDialog" class="dialog-overlay" style="display: none;">
+    <div class="dialog-box">
+      <h3>Transfer Admin Before Leaving</h3>
+      <p>You are the group creator. Select a new admin:</p>
+      <select id="newAdminSelect" class="admin-select">
+        <!-- Options will be populated dynamically -->
+      </select>
+      <div class="dialog-actions">
+        <button onclick="confirmTransferAndLeave()" class="btn-primary">Transfer & Leave</button>
+        <button onclick="closeTransferAdminDialog()" class="btn-secondary">Cancel</button>
       </div>
     </div>
   </div>
